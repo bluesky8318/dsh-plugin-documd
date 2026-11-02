@@ -7,9 +7,11 @@ node_modules/
 # must be runnable straight out of the tarball (see "安装时零构建" in README).
 # Rebuild them with `npm run build:release` before committing/tagging.
 
-# The engine is a git submodule pinned by .gitmodules/gitlink; its dependencies
-# are installed by `npm run vendor:install` (or `npm install` inside it), never
-# committed. The tarball + SHA marker are fallback-path scratch files.
-vendor/markdown-viewer/node_modules/
+# The engine is materialized by `npm run vendor:install` (pinned SHA in
+# scripts/vendor-install.mjs) and is NEVER committed, and NEVER referenced as a
+# git submodule: pnpm runs `git submodule update --init --recursive` for git
+# dependencies, and the engine's own nested submodules use SSH URLs, so a
+# published gitlink makes `dsh plugin add github:...` fail on install.
+vendor/markdown-viewer/
 vendor/.markdown-viewer.tgz
 vendor/.markdown-viewer.sha

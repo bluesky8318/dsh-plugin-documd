@@ -18,6 +18,7 @@ own host half. GPL-3.0-only, because the engine is GPL-3.0-only.
 | 降级链（PDF/图片内嵌、Office 卡片 + 其它 viewer 挂载点） | ✅ 代码就绪；同样只做过类型/构建验证 |
 | 安装时零构建（`pnpm add github:…#sha` 不跑脚本） | ✅ 实测：无任何安装期脚本，`lib/` 与 `assets/viewer/` 随包分发 |
 | host 半边在「无 node_modules 的本地 clone」下可 import | ✅ 实测：0.1.3 起所有运行时依赖已内联，`lib/index.js` 只剩 `node:*` import |
+| `github:` 安装（pnpm 会递归初始化 submodule） | ✅ 0.1.4 起仓库无 `.gitmodules`，安装不再触发上游引擎的 SSH submodule 拉取 |
 | dsh 0.2.1-rc.5 兼容闸门（`requirements`） | ✅ 实测：用 dsh 自带 `evaluatePluginCompatibility` + 真 CLI 判定通过 |
 
 > 诚实边界：tab 能不能在真 dsh 里命中，只有装上 `dsh web` 才能证明。本仓库做到的是
@@ -32,29 +33,31 @@ own host half. GPL-3.0-only, because the engine is GPL-3.0-only.
 
 ```sh
 # desktop profile（报错里出现的 profile 就走这个）
-dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v0.1.3
+dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v0.1.4
 
 # web profile 同理
-dsh plugin --profile web add github:bluesky8318/dsh-plugin-documd#v0.1.3
+dsh plugin --profile web add github:bluesky8318/dsh-plugin-documd#v0.1.4
 
 dsh                    # 起 GUI，点会话里的文件链接即可在右侧栏预览
 ```
 
-`#v0.1.3` 是 tag，也可以钉提交：`github:bluesky8318/dsh-plugin-documd#<sha>`（
-v0.1.3 对应提交见仓库 Releases / `git rev-list -n1 v0.1.3`）。
+`#v0.1.4` 是 tag，也可以钉提交：`github:bluesky8318/dsh-plugin-documd#<sha>`（
+v0.1.4 对应提交见仓库 Releases / `git rev-list -n1 v0.1.4`）。
 
-> **`vendor/markdown-viewer` 这个 submodule 只有「重建 viewer 资产的开发者」才需要。**
-> codeload 的 `tar.gz`（pnpm 装 GitHub 包时用的就是它）**不包含 submodule 内容**，而安装/运行路径
-> 完全不读它：宿主只从 `assets/viewer/` 取静态文件。只有你改 `viewer/` 或升级引擎、要重跑
-> `npm run build:viewer` 时才需要 `git submodule update --init && npm run vendor:install`；
-> 缺 vendor 时构建脚本会直接报错并给出这条命令，不会静默产出半成品。
+> **仓库里没有 git submodule（0.1.4 起）。** pnpm 装 git 依赖时会执行
+> `git submodule update --init --recursive`，而上游引擎自己的嵌套 submodule 用的是 SSH URL，
+> 在没有 SSH key 的机器上必然失败（表现为 `Permission denied (publickey)`）。所以
+> `vendor/markdown-viewer/` 改为**不入库、不作为 submodule**，只给「重建 viewer 资产」的开发者用：
+> 运行路径完全不读它（宿主只从 `assets/viewer/` 取静态文件）。
+>
+> 需要重建 viewer 时：`npm run vendor:install`（按 `scripts/vendor-install.mjs` 里钉死的 SHA 下载 tarball、
+> 解包、装依赖并打 dsh patch）；缺 vendor 时构建脚本会直接报错并给出这条命令，不会静默产出半成品。
 
 本地开发（要重新生成 `lib/` 与 `assets/viewer/`）：
 
 ```sh
 npm install
-git submodule update --init     # 仅重建 viewer 需要
-npm run vendor:install          # 仅重建 viewer 需要：装引擎依赖 + 打 dsh patch
+npm run vendor:install          # 仅重建 viewer 需要：下载引擎 + 装依赖 + 打 dsh patch
 npm run build:release           # tsdown → lib/，并校验 assets/viewer/ 完整性
 ```
 
@@ -175,7 +178,7 @@ viewer/
   build.js              从上游 vscode/build.js fork：MV_PLATFORM="dsh"、MV_RUNTIME="webview"
   src/webview/api-impl.ts        PlatformAPI 的 dsh 实现（走自有 HTTP，不碰 chrome.*）
   src/workspace/viewer-embed.ts  iframe 侧桥 + 渲染器装配
-vendor/markdown-viewer/ 上游引擎（git submodule，钉死 SHA；见 NOTICE）
+vendor/markdown-viewer/ 上游引擎（不入库，由 `npm run vendor:install` 按 SHA 物化；见 NOTICE）
 assets/viewer/          构建产物（已提交）
 scripts/                vendor-install / patch-vendor / build-viewer
 dev/                    serve-viewer.mjs + harness.html + sample
@@ -184,19 +187,20 @@ tests/                  contract.spec.ts / host.spec.ts
 
 ## 升级 docu.md 引擎
 
-引擎是 submodule，升级 = 移动 gitlink：
+引擎不入库（也**不是** submodule），升级 = 改一处 SHA 再重新物化：
 
-1. `git -C vendor/markdown-viewer fetch origin && git -C vendor/markdown-viewer checkout <目标提交>`
-2. 把 `scripts/vendor-install.mjs` 与 `scripts/patch-vendor.mjs` 里的 `VENDOR_SHA` 改成同一个 SHA；
-3. `npm run vendor:install`（重装依赖并重打两处 dsh patch；若 `patch-vendor.mjs` 报
-   “upstream text not found”，说明上游改了那两行，改脚本锚点而**不要**手改 vendor 树）；
-4. `npm run build:viewer` 重建产物，核对 `npm run build:viewer:check` 通过；
-5. 对照 `EXT_LANG_MAP` 更新 `src/shared/contract.ts` 的 `CODE_EXTENSIONS`，跑 `npm run test:unit`；
-6. `git add vendor/markdown-viewer .gitmodules` 提交新的 gitlink。
+1. 把 `scripts/vendor-install.mjs` 与 `scripts/patch-vendor.mjs` 里的 `VENDOR_SHA` 改成同一个目标提交；
+2. `npm run vendor:install -- --force`（重新下载 tarball、装依赖并重打两处 dsh patch；若
+   `patch-vendor.mjs` 报“upstream text not found”，说明上游改了那两行，改脚本锚点而**不要**手改 vendor 树）；
+3. `npm run build:viewer` 重建产物，核对 `npm run build:viewer:check` 通过；
+4. 对照 `EXT_LANG_MAP` 更新 `src/shared/contract.ts` 的 `CODE_EXTENSIONS`，跑 `npm run test:unit`；
+5. `git add src/shared/contract.ts assets/viewer` 提交新的构建产物与扩展名清单（**不提交 vendor/**）。
 
-选择 submodule 而不是「把上游文件直接提交进仓库」：上游是 GPL-3.0-only 的独立项目，submodule
-能精确钉住提交、保留上游历史与 license 边界，仓库也不会因为一次上游改动产生上千文件的 diff。
-唯一代价是 clone 后要多跑一次 `git submodule update --init`（已在上面安装步骤里）。
+选择「不入库 + 按 SHA 下载」而不是 submodule：上游是 GPL-3.0-only 的独立项目，用 SHA 钉住同样能保证
+可重现，且仓库不会因为一次上游改动产生上千文件的 diff；更关键的是 **pnpm 装 git 依赖时会递归
+初始化 submodule**，而上游的嵌套 submodule 用 SSH URL，会让所有用户的安装直接失败。
+vendor 目录已在 `.gitignore` 里，`check:packaging` 也会在没有 `.gitmodules` 时通过、出现就报错。
+唯一代价是 clone 后要多跑一次 `npm run vendor:install`（仅在你需要重建 viewer 时）。
 
 ## 版本兼容（务必看）
 

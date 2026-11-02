@@ -56,6 +56,16 @@ if (!manifest.dsh?.bundle?.patch || !manifest.dsh?.client?.platform) {
   problems.push('manifest is missing dsh.bundle.patch / dsh.client.platform')
 }
 
+// pnpm 装 git 依赖时会执行 `git submodule update --init --recursive`，而上游引擎的
+// 嵌套 submodule 用的是 SSH URL（无密钥必然失败）。所以仓库里不能出现 .gitmodules /
+// gitlink，vendor 只能由 `npm run vendor:install` 按 SHA 物化，且不提交。
+if (fs.existsSync(path.join(pluginRoot, '.gitmodules'))) {
+  problems.push(
+    'repository declares git submodules (.gitmodules): pnpm recurses them on install and the ' +
+      'vendor engine has SSH-url nested submodules, which breaks `dsh plugin add github:...`',
+  )
+}
+
 /**
  * 运行时依赖守卫：产物里除了 `node:` 内置和宿主提供的 peer，不能再有裸引用。
  *
