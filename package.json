@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-documd",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Right-sidebar file preview for DeepSeek Harness (dsh), rendering Markdown and code with the docu.md engine inside a sandboxed iframe.",
   "keywords": [
     "deepseek-harness",
@@ -65,18 +65,18 @@
     "@deepseek-ai/schemastery": "~3.18.4"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "~4.0.4",
-    "@deepseek-ai/dsh-tools": "0.1.7-rc.2"
+    "@deepseek-ai/cordis": "~4.0.5",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.5"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "~4.0.4",
-    "@deepseek-ai/dsh-client-locale": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-client-ui-plugin-manager": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.7-rc.2",
-    "@deepseek-ai/dsh-client-ui-sidebar-right": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-host-webserver": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-tools": "0.1.7-rc.2",
+    "@deepseek-ai/cordis": "~4.0.5",
+    "@deepseek-ai/dsh-client-locale": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-host-webserver": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.5",
     "@types/node": "^22.20.0",
     "@types/react": "^18.3.0",
     "esbuild": "^0.25.12",

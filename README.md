@@ -17,6 +17,7 @@ own host half. GPL-3.0-only, because the engine is GPL-3.0-only.
 | 客户端 tab 注册（`sidebarRightTabs` + `sidebar.right.pane.tab`） | ⚠️ 类型检查 + 构建通过；**未在真 dsh GUI 里加载验证**（本机无 dsh 运行环境） |
 | 降级链（PDF/图片内嵌、Office 卡片 + 其它 viewer 挂载点） | ✅ 代码就绪；同样只做过类型/构建验证 |
 | 安装时零构建（`pnpm add github:…#sha` 不跑脚本） | ✅ 实测：无任何安装期脚本，`lib/` 与 `assets/viewer/` 随包分发 |
+| dsh 0.2.1-rc.5 兼容闸门（`requirements`） | ✅ 实测：用 dsh 自带 `evaluatePluginCompatibility` + 真 CLI 判定通过 |
 
 > 诚实边界：tab 能不能在真 dsh 里命中，只有装上 `dsh web` 才能证明。本仓库做到的是
 > 「宿主半边真跑通 + viewer 真渲染」，客户端半边到「类型/构建/协议按 npm 包 `.d.ts` 对齐」为止。
@@ -30,15 +31,16 @@ own host half. GPL-3.0-only, because the engine is GPL-3.0-only.
 
 ```sh
 # desktop profile（报错里出现的 profile 就走这个）
-dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v0.1.1
+dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v0.1.2
 
 # web profile 同理
-dsh plugin --profile web add github:bluesky8318/dsh-plugin-documd#v0.1.1
+dsh plugin --profile web add github:bluesky8318/dsh-plugin-documd#v0.1.2
 
 dsh                    # 起 GUI，点会话里的文件链接即可在右侧栏预览
 ```
 
-`#v0.1.1` 是 tag，也可以钉提交：`github:bluesky8318/dsh-plugin-documd#<sha>`。
+`#v0.1.2` 是 tag，也可以钉提交：`github:bluesky8318/dsh-plugin-documd#<sha>`（
+v0.1.2 对应提交见仓库 Releases / `git rev-list -n1 v0.1.2`）。
 
 > **`vendor/markdown-viewer` 这个 submodule 只有「重建 viewer 资产的开发者」才需要。**
 > codeload 的 `tar.gz`（pnpm 装 GitHub 包时用的就是它）**不包含 submodule 内容**，而安装/运行路径
@@ -197,15 +199,48 @@ tests/                  contract.spec.ts / host.spec.ts
 
 ## 版本兼容（务必看）
 
-`@deepseek-ai/dsh-host-webserver` 的服务名在版本间变过：
+本插件锁定的 dsh 运行时：**`0.2.1-rc.5`**（desktop 0.2.1-rc.5 自带
+`@deepseek-ai/dsh-tools@0.2.1-rc.5`）。
+
+dsh 安装插件时会读插件 `package.json` 的 **`peerDependencies`** 作为报错里的
+`requirements`：判定函数在 `@deepseek-ai/dsh-app-boot`（`evaluatePluginCompatibility()` →
+`unmetRequirements()`），只挑以 `@deepseek-ai/dsh` / `@deepseek-ai/dsh-` 开头的 peer，
+用 `semver.satisfies(runtimeVersion, range, { includePrerelease: true })` 与运行时版本比较；
+若 manifest 里存在 `engines.dsh`，则**只看它**并忽略 peer（本插件不用 `engines.dsh`）。
+
+```json
+"peerDependencies": {
+  "@deepseek-ai/cordis": "~4.0.5",         // 不参与闸门判定
+  "@deepseek-ai/dsh-tools": "0.2.1-rc.5"   // ← 参与判定，必须是 dsh 自带的那一版
+}
+```
+
+为什么用精确版本而不是范围：`0.2.1-rc.5` 属于预发布版，`~0.2.1-rc.5` 只覆盖 `0.2.1` 的
+预发布增量，rc 之间仍可能有 API 变动；精确匹配等于「只对已验证的这一版放行」。代价是 dsh 升到
+`0.2.1-rc.6` 时闸门会再次拒绝——这是**预期行为**，请按下节重新验证，不要用
+`dsh plugin allow-version` 豁免绕过（豁免绕过的正是需要验证的东西）。
+
+`@deepseek-ai/dsh-host-webserver` 的服务名在版本间也变过：
 
 | dsh-host-webserver | 注入名 |
 | --- | --- |
 | `0.0.1-rc.1` | `httpServer` |
-| `0.1.7-rc.2`（本插件对齐的版本，与模板一致） | `webServer` |
+| `0.1.x` – `0.2.1-rc.5`（本插件对齐） | `webServer` |
 
-若你的 dsh 还是 `0.0.x`，把 [src/index.ts](src/index.ts) 的 `inject` 与 `ctx.webServer` 改成
-`httpServer`，并同步改 `package.json` 的 devDependencies。
+### 升级 dsh 时要一起改哪里
+
+1. `package.json`：`peerDependencies["@deepseek-ai/dsh-tools"]` 改成新版 dsh 自带的版本；
+   `devDependencies` 里 7 个 `@deepseek-ai/dsh-*` 全部改到同一版本（`dsh-tools`、
+   `dsh-client-locale`、`dsh-client-ui-plugin-manager`、`dsh-client-ui-renderer`、
+   `dsh-client-ui-sidebar-right`、`dsh-client-ui-slots`、`dsh-host-webserver`）；
+   `@deepseek-ai/cordis` 跟随 dsh 自己的 peer 声明（当前 `~4.0.5`）。
+2. 删掉 `node_modules` 与 `package-lock.json` 后 `npm install`（改了 peer 再增量装，npm 会因旧
+   lock 报 `ERESOLVE`），然后 `npm run typecheck` 对着**新版 `.d.ts`** 过一遍。
+3. `npm run build:release` 重建 `lib/`（「安装时零构建」要求产物随包提交）。
+4. 核对这几处契约是否仍成立：`ctx.webServer.register`、`ctx.sidebarRightTabs.register` 与
+   `ctx.sidebarRight.openResource`、`ctx.slots` 的 `sidebar.right.pane.tab` 座位、
+   客户端 bundle 的 `window.__ModuleLoader__.load({ id, factory })`。
+5. 最后 bump 插件版本、打**新 tag**（不要复用旧 tag），再按下面命令重装。
 
 ## 已知限制
 
