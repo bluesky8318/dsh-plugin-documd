@@ -1,0 +1,14 @@
+node_modules/
+lib/
+*.log
+.DS_Store
+
+# The engine is a git submodule pinned by .gitmodules/gitlink; its dependencies
+# are installed by `npm run vendor:install` (or `npm install` inside it), never
+# committed. The tarball + SHA marker are fallback-path scratch files.
+vendor/markdown-viewer/node_modules/
+vendor/.markdown-viewer.tgz
+vendor/.markdown-viewer.sha
+
+# `assets/viewer/` IS committed: a GitHub install has no build step for it, and
+# the host half serves it read-only from the package.

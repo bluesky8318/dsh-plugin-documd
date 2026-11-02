@@ -1,0 +1,37 @@
+{
+  "id": "warm",
+  "name": "暖色调",
+  "name_en": "Warm",
+  "description": "温暖的棕橙色系，适合文艺和手写风格",
+  "description_en": "Warm brown-orange scheme for literary and handwritten styles",
+  
+  "text": {
+    "primary": "#1c1917",
+    "secondary": "#44403c",
+    "muted": "#78716c"
+  },
+  
+  "accent": {
+    "link": "#b45309",
+    "linkHover": "#92400e"
+  },
+  
+  "background": {
+    "page": "#fefcf9",
+    "surface": "#f4efe7",
+    "code": "#f1eee7",
+    "blockquote": "#f5f2ec"
+  },
+  
+  "blockquote": {
+    "border": "#a8a29e"
+  },
+  
+  "table": {
+    "border": "#a8a29e",
+    "headerBackground": "#f1ede5",
+    "headerText": "#1c1917",
+    "zebraEven": "#fdfbf8",
+    "zebraOdd": "#ffffff"
+  }
+}

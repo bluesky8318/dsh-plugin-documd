@@ -1,0 +1,22 @@
+# 本地开发 overlay：在 deepseek-harness 源码根目录运行
+#
+#   pnpm dsh web --patch /absolute/path/to/dsh-plugin-documd/dev/cordis.yml
+#
+# name 必须是 `file://` 绝对 URL，不能是裸路径：Loader 把条目的 name 直接交给
+# import()，Windows 上 `D:\...` 会被当成协议 `d:`，条目以
+# ERR_UNSUPPORTED_ESM_URL_SCHEME 静默失败。取 URL 形式：
+#
+#   node -e "console.log(require('node:url').pathToFileURL('<插件绝对路径>').href)"
+#
+# 注意：overlay 只加载宿主半边（模块解析到源码文件，发现不了 dsh.client 包级声明）。
+# 要测浏览器半边（右侧栏 tab），必须把包装进 profile：
+#   dsh plugin --profile web add /absolute/path/to/dsh-plugin-documd && dsh web
+- insert:
+    - id: dsh-plugin-documd
+      name: 'file:///absolute/path/to/dsh-plugin-documd/src/index.ts'
+      config:
+        # 空值回落进程当前目录；多个根用 `;` 分隔
+        workspaceRoot: ''
+        themeId: auto
+        maxPreviewBytes: 8388608
+        tokenTtlMs: 600000

@@ -1,0 +1,12 @@
+{
+  "meta": {
+    "title": "docu.md Preview",
+    "description": "Preview Markdown, code and diagrams in the right sidebar with the docu.md rendering engine."
+  },
+  "unsupported": {
+    "title": "This file type is not previewed yet",
+    "detail": "{ext} files need a dedicated viewer. Install dsh-docx, dsh-pptx or dsh-opensheet-sidebar to open them in the sidebar.",
+    "binary": "This file is binary and has no registered previewer.",
+    "toolarge": "This file is larger than the preview limit ({limit})."
+  }
+}

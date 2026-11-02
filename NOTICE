@@ -1,0 +1,61 @@
+dsh-plugin-documd
+Copyright (C) 2026 dsh-plugin-documd contributors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 3 of the License only.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program. If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+Third-party notices
+===================
+
+docu.md / markdown-viewer
+-------------------------
+
+The rendering engine in `vendor/markdown-viewer/` and the static viewer built
+from it into `assets/viewer/` come from
+
+    markdown-viewer/markdown-viewer-extension
+    https://github.com/markdown-viewer/markdown-viewer-extension
+
+    pinned commit: eca66a1dd07f2cc8d9bac16337d120aae67ff834
+    license:       GPL-3.0-only
+    upstream LICENSE text: copied verbatim as the `LICENSE` file in this repo.
+
+The engine is vendored unmodified except for two source edits made by
+`scripts/patch-vendor.mjs`, which add the `'dsh'` platform to the engine's
+platform union:
+
+    vendor/markdown-viewer/src/types/platform.ts       (PlatformType)
+    vendor/markdown-viewer/src/utils/platform-info.ts  (PLATFORM_SET)
+
+Everything that adapts the engine to DeepSeek Harness lives outside the vendor
+tree, in this repo's own sources:
+
+    viewer/src/webview/api-impl.ts       PlatformAPI implementation (HTTP file/asset access)
+    viewer/src/webview/index.ts          platform singleton
+    viewer/src/workspace/viewer-embed.ts iframe-side host bridge and renderer wiring
+    viewer/build.js                      fork of upstream `vscode/build.js` (offline viewer build)
+
+Because the combined work links GPL-3.0-only code, the whole repository is
+distributed under GPL-3.0-only.
+
+Other bundled third-party assets
+--------------------------------
+
+`assets/viewer/` additionally contains the upstream build's third-party
+resources (themes, locale message catalogs, KaTeX fonts, drawio stencils,
+Mermaid). Their licenses come with the upstream package and its dependencies;
+the build output ships them unchanged.
+
+DeepSeek Harness client packages (`@deepseek-ai/*`) are used at runtime but are
+not redistributed here; they are declared as peer/dev dependencies in
+`package.json`.

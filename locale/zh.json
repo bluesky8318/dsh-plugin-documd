@@ -1,0 +1,12 @@
+{
+  "meta": {
+    "title": "docu.md 预览",
+    "description": "在右侧栏用 docu.md 渲染引擎预览 Markdown、代码与图表。"
+  },
+  "unsupported": {
+    "title": "暂不支持预览该文件类型",
+    "detail": "{ext} 文件需要专用预览器。安装 dsh-docx、dsh-pptx 或 dsh-opensheet-sidebar 后可在右侧栏打开。",
+    "binary": "这是二进制文件，没有注册的预览器。",
+    "toolarge": "文件超过预览上限（{limit}）。"
+  }
+}

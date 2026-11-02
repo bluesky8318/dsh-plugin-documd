@@ -1,0 +1,29 @@
+{
+  "id": "official",
+  "name": "党政公文",
+  "name_en": "Official Document",
+  "description": "国标三号仿宋正文、黑体/楷体标题，符合党政机关公文格式",
+  "description_en": "GB/T 9704 official document: San-hao FangSong body with Hei/Kai headings",
+  "author": "docu.md Markdown Viewer",
+  "version": "1.0.0",
+  "fontScheme": {
+    "body": {
+      "fontFamily": "FangSong"
+    },
+    "headings": {
+      "fontFamily": "FangSong",
+      "fontWeight": "normal",
+      "h1": { "fontFamily": "SimSun", "fontWeight": "normal" },
+      "h2": { "fontFamily": "SimHei", "fontWeight": "normal" },
+      "h3": { "fontFamily": "KaiTi", "fontWeight": "normal" },
+      "h4": { "fontFamily": "FangSong", "fontWeight": "bold" }
+    },
+    "code": {
+      "fontFamily": "Monaco"
+    }
+  },
+  "layoutScheme": "formal",
+  "colorScheme": "neutral",
+  "tableStyle": "grid",
+  "codeTheme": "light-clean"
+}
