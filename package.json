@@ -52,7 +52,8 @@
   },
   "scripts": {
     "build": "tsdown",
-    "build:release": "tsdown && node scripts/build-viewer.mjs --check",
+    "build:release": "tsdown && node scripts/check-packaging.mjs && node scripts/build-viewer.mjs --check",
+    "check:packaging": "node scripts/check-packaging.mjs",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run",
     "vendor:install": "node scripts/vendor-install.mjs",

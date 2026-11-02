@@ -127,7 +127,8 @@ git submodule update --init  # 上游引擎（.gitmodules 里钉死 SHA）
 npm run vendor:install       # 装上游依赖 + 打两处 dsh patch（已检出时不再下载）
 npm run typecheck           # tsc --noEmit（src + tests）
 npm run test:unit           # vitest：契约解析 / workspace 约束 / token / 真 HTTP 路由
-npm run build:release       # tsdown → lib/（提交），并校验 assets/viewer/ 完整性
+npm run build:release       # tsdown → lib/（提交），并校验安装可用性与 assets/viewer/ 完整性
+npm run check:packaging     # 只校验「安装时零构建」契约（无安装期脚本 + lib/assets 齐全）
 npm run build:viewer        # 重建 assets/viewer（约 23 MB，需要 vendor 与 esbuild）
 npm run build:viewer:check  # 只校验产物完整性，不重建
 ```
