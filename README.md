@@ -65,7 +65,7 @@ dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v0.1.5
 # web profile 同理
 dsh plugin --profile web add github:bluesky8318/dsh-plugin-documd#v0.1.5
 
-dsh                    # 起 GUI，点会话里的文件链接即可在右侧栏预览
+dsh                    # 起 GUI；默认 manual：在预览的“打开方式”里选 docu.md 才会用本插件
 ```
 
 `#v0.1.5` 是 tag，也可以钉提交：`github:bluesky8318/dsh-plugin-documd#<sha>`（
