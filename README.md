@@ -1,4 +1,4 @@
-# dsh-plugin-documd
+﻿# dsh-plugin-documd
 
 在 DeepSeek Harness（dsh）**右侧栏**预览 Markdown、代码与图表：用 [docu.md](https://docu.md/) 的渲染引擎
 （`markdown-viewer` v6.0.0）渲染，文件内容由本插件宿主半边同源提供，viewer 运行在沙箱 iframe 里。
@@ -14,9 +14,10 @@ own host half. GPL-3.0-only, because the engine is GPL-3.0-only.
 | 宿主半边（HTTP + token + 路径约束） | ✅ 已跑通（38 条单测 + 真 HTTP 请求） |
 | viewer 静态产物 | ✅ 已构建并**提交**在 `assets/viewer/`（34 套主题、mermaid、KaTeX 字体、_locales） |
 | viewer 渲染 Markdown/代码/Mermaid/KaTeX/相对图片 | ✅ 裸浏览器实测通（截图见 [docs/dev-harness-render.png](docs/dev-harness-render.png)） |
-| 客户端 tab 注册（`sidebarRightTabs` + `sidebar.right.pane.tab`） | ⚠️ 类型检查 + 构建通过；**未在真 dsh GUI 里加载验证**（本机无 dsh 运行环境） |
+| 客户端 tab 注册（`sidebarRightTabs` + `sidebar.right.pane.tab`） | ⚠️ 类型检查 + 构建通过；**未在真 dsh GUI 里加载验证**（本机有 dsh CLI，但未启动 GUI 点开文件） |
 | 降级链（PDF/图片内嵌、Office 卡片 + 其它 viewer 挂载点） | ✅ 代码就绪；同样只做过类型/构建验证 |
 | 安装时零构建（`pnpm add github:…#sha` 不跑脚本） | ✅ 实测：无任何安装期脚本，`lib/` 与 `assets/viewer/` 随包分发 |
+| host 半边在「无 node_modules 的本地 clone」下可 import | ✅ 实测：0.1.3 起所有运行时依赖已内联，`lib/index.js` 只剩 `node:*` import |
 | dsh 0.2.1-rc.5 兼容闸门（`requirements`） | ✅ 实测：用 dsh 自带 `evaluatePluginCompatibility` + 真 CLI 判定通过 |
 
 > 诚实边界：tab 能不能在真 dsh 里命中，只有装上 `dsh web` 才能证明。本仓库做到的是
@@ -31,16 +32,16 @@ own host half. GPL-3.0-only, because the engine is GPL-3.0-only.
 
 ```sh
 # desktop profile（报错里出现的 profile 就走这个）
-dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v0.1.2
+dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v0.1.3
 
 # web profile 同理
-dsh plugin --profile web add github:bluesky8318/dsh-plugin-documd#v0.1.2
+dsh plugin --profile web add github:bluesky8318/dsh-plugin-documd#v0.1.3
 
 dsh                    # 起 GUI，点会话里的文件链接即可在右侧栏预览
 ```
 
-`#v0.1.2` 是 tag，也可以钉提交：`github:bluesky8318/dsh-plugin-documd#<sha>`（
-v0.1.2 对应提交见仓库 Releases / `git rev-list -n1 v0.1.2`）。
+`#v0.1.3` 是 tag，也可以钉提交：`github:bluesky8318/dsh-plugin-documd#<sha>`（
+v0.1.3 对应提交见仓库 Releases / `git rev-list -n1 v0.1.3`）。
 
 > **`vendor/markdown-viewer` 这个 submodule 只有「重建 viewer 资产的开发者」才需要。**
 > codeload 的 `tar.gz`（pnpm 装 GitHub 包时用的就是它）**不包含 submodule 内容**，而安装/运行路径
@@ -241,6 +242,41 @@ dsh 安装插件时会读插件 `package.json` 的 **`peerDependencies`** 作为
    `ctx.sidebarRight.openResource`、`ctx.slots` 的 `sidebar.right.pane.tab` 座位、
    客户端 bundle 的 `window.__ModuleLoader__.load({ id, factory })`。
 5. 最后 bump 插件版本、打**新 tag**（不要复用旧 tag），再按下面命令重装。
+
+## 依赖与打包策略（为什么有的内联、有的不内联）
+
+插件有**两条**加载路径，二者都必须能 import 成功：
+
+| 加载方式 | 有没有 `node_modules` | 说明 |
+| --- | --- | --- |
+| `dsh plugin add` 装进 profile | 有（pnpm 会把 dependencies 装进 profile） | 正常安装路径 |
+| 本地 clone / overlay（`--patch` 指向 `file://` 的 `cordis.patch.yml`） | **通常没有**（只 `git clone`，没跑 `npm install`） | 开发路径，0.1.2 在这里炸过 `ERR_MODULE_NOT_FOUND` |
+
+所以判断标准不是「profile 里能不能解析到」，而是「**没有 node_modules 时能不能解析到**」：
+
+| 包 | 怎么处理 | 理由 |
+| --- | --- | --- |
+| `@deepseek-ai/cordis`、`@deepseek-ai/dsh-tools` | **peerDependencies（外部）** | 宿主注入，必须与宿主同一实例；也是兼容闸门读取的字段 |
+| `@deepseek-ai/dsh-client-*`、`@deepseek-ai/dsh-host-webserver` | 仅 `import type`（不产生运行时引用） | 类型来源，不进产物 |
+| `@deepseek-ai/schemastery` | **内联进 `lib/index.js`**（`deps.alwaysBundle`），版本固定在 devDependencies | 见下 |
+| `react` / `react/jsx-runtime`（仅客户端 bundle） | 外部，由浏览器模块表提供 | `__ModuleLoader__` 的 `require` 表里只有这两个 |
+
+**schemastery 为什么内联**：
+
+1. 它是**普通依赖**（官方插件也这么声明，但它们住在宿主自己的 `node_modules` 树里，靠邻接解析）；
+   第三方插件装进 profile 时有依赖可装，**本地 clone 没有**——0.1.2 的报错就是这条路径。
+2. 内联是安全的：宿主 asar 内是 `3.18.5`，本包 devDependency 也钉 `3.18.5`，内联进去的是**同一份代码**；
+   它是纯校验器，cordis 只按 `StandardSchemaV1`（`~standard.validate`）鸭子类型调用，不做 `instanceof`，
+   因此不存在「两个实例导致行为不一致」的问题。
+3. 相比「声明 peer 让宿主注入」：schemastery 是宿主的**内部依赖**，不是对外暴露的服务，插件的 Node
+   解析链看不到 `app.asar` 内部，声明成 peer 只会把同一个错误换成「peer 缺失」。
+
+**守卫**：`npm run check:packaging` 会扫描 `lib/index.js` 与 `lib/client.js` 的所有裸模块引用，
+凡是「不是 `node:` 内置、也不是 peerDependencies 里的名字」就直接失败，并提示去
+`tsdown.config.ts` 里加 `deps.alwaysBundle`。这条守卫是在 0.1.2 → 0.1.3 修复时加的，能直接复现当年那个 bug。
+
+升级 schemastery 时：只改 `devDependencies` 里的版本（必须与宿主 asar 内的版本一致），
+再 `npm run build:release`，确认 `lib/index.js` 里的 `import` 只剩 `node:*`。
 
 ## 已知限制
 

@@ -56,6 +56,46 @@ if (!manifest.dsh?.bundle?.patch || !manifest.dsh?.client?.platform) {
   problems.push('manifest is missing dsh.bundle.patch / dsh.client.platform')
 }
 
+/**
+ * 运行时依赖守卫：产物里除了 `node:` 内置和宿主提供的 peer，不能再有裸引用。
+ *
+ * 本地 clone / overlay 加载时没有 node_modules，任何普通 dependency 都会在
+ * `import lib/index.js` 阶段炸掉（ERR_MODULE_NOT_FOUND）；所以要内联进 bundle，
+ * 而不是留在 package.json 的 dependencies 里。
+ *
+ * - `lib/index.js`（宿主半边，Node 解析）：允许 `node:` + peerDependencies。
+ * - `lib/client.js`（浏览器半边）：只允许浏览器模块表里的 react 两个入口。
+ */
+const CLIENT_ALLOWED = new Set(['react', 'react/jsx-runtime'])
+
+function bareSpecifiers(source) {
+  const specs = new Set()
+  const patterns = [
+    /from\s*["']([^"']+)["']/g,
+    /import\s*\(\s*["']([^"']+)["']\s*\)/g,
+    /require\s*\(\s*["']([^"']+)["']\s*\)/g,
+  ]
+  for (const pattern of patterns) {
+    for (const match of source.matchAll(pattern)) specs.add(match[1])
+  }
+  return [...specs].filter((spec) => !spec.startsWith('.') && !spec.startsWith('/'))
+}
+
+function checkExternals(file, allowed) {
+  const source = fs.readFileSync(path.join(pluginRoot, file), 'utf8')
+  for (const spec of bareSpecifiers(source)) {
+    if (spec.startsWith('node:')) continue
+    if (allowed.has(spec)) continue
+    problems.push(
+      `${file} imports "${spec}", which is neither a node builtin nor host-provided; ` +
+        'inline it in tsdown.config.ts (noExternal) instead of shipping it as a dependency',
+    )
+  }
+}
+
+checkExternals('lib/index.js', new Set(Object.keys(manifest.peerDependencies ?? {})))
+checkExternals('lib/client.js', CLIENT_ALLOWED)
+
 if (problems.length > 0) {
   console.error('✗ packaging is not install-ready:')
   for (const problem of problems) console.error(`  - ${problem}`)
