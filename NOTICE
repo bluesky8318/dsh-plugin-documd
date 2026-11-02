@@ -20,8 +20,10 @@ Third-party notices
 docu.md / markdown-viewer
 -------------------------
 
-The rendering engine in `vendor/markdown-viewer/` and the static viewer built
-from it into `assets/viewer/` come from
+The rendering engine in `vendor/markdown-viewer/` (a git submodule: this repo's
+tree holds only a gitlink pinned by `.gitmodules`, so the upstream history and
+its license boundary stay intact) and the static viewer built from it into
+`assets/viewer/` come from
 
     markdown-viewer/markdown-viewer-extension
     https://github.com/markdown-viewer/markdown-viewer-extension
