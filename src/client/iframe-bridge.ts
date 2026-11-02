@@ -1,6 +1,6 @@
 /**
  * Typed wrapper around the iframe protocol implemented by
- * `vendor/markdown-viewer/dsh/src/workspace/viewer-embed.ts`.
+ * `viewer/src/workspace/viewer-embed.ts`.
  *
  * Keeping the protocol in one module means the tab body and the viewer agree on
  * message names, and that a future viewer change fails to compile instead of

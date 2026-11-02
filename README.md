@@ -16,43 +16,56 @@ own host half. GPL-3.0-only, because the engine is GPL-3.0-only.
 | viewer 渲染 Markdown/代码/Mermaid/KaTeX/相对图片 | ✅ 裸浏览器实测通（截图见 [docs/dev-harness-render.png](docs/dev-harness-render.png)） |
 | 客户端 tab 注册（`sidebarRightTabs` + `sidebar.right.pane.tab`） | ⚠️ 类型检查 + 构建通过；**未在真 dsh GUI 里加载验证**（本机无 dsh 运行环境） |
 | 降级链（PDF/图片内嵌、Office 卡片 + 其它 viewer 挂载点） | ✅ 代码就绪；同样只做过类型/构建验证 |
+| 安装时零构建（`pnpm add github:…#sha` 不跑脚本） | ✅ 实测：无任何安装期脚本，`lib/` 与 `assets/viewer/` 随包分发 |
 
 > 诚实边界：tab 能不能在真 dsh 里命中，只有装上 `dsh web` 才能证明。本仓库做到的是
 > 「宿主半边真跑通 + viewer 真渲染」，客户端半边到「类型/构建/协议按 npm 包 `.d.ts` 对齐」为止。
 
-## 安装
+## 安装（安装时零构建）
 
-先构建（`lib/` 是构建产物）：
+`lib/`（宿主 `lib/index.js` + 客户端 `lib/client.js`）和 `assets/viewer/`（约 23 MB 离线 viewer）都**已提交**，
+`package.json` 里**没有任何安装期脚本**（无 `prepare` / `preinstall` / `install` / `postinstall`）。
+因此 pnpm / npm 从 GitHub 装这个包时**不需要执行构建**，也不会触发
+`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`。
+
+```sh
+# desktop profile（报错里出现的 profile 就走这个）
+dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v0.1.1
+
+# web profile 同理
+dsh plugin --profile web add github:bluesky8318/dsh-plugin-documd#v0.1.1
+
+dsh                    # 起 GUI，点会话里的文件链接即可在右侧栏预览
+```
+
+`#v0.1.1` 是 tag，也可以钉提交：`github:bluesky8318/dsh-plugin-documd#<sha>`。
+
+> **`vendor/markdown-viewer` 这个 submodule 只有「重建 viewer 资产的开发者」才需要。**
+> codeload 的 `tar.gz`（pnpm 装 GitHub 包时用的就是它）**不包含 submodule 内容**，而安装/运行路径
+> 完全不读它：宿主只从 `assets/viewer/` 取静态文件。只有你改 `viewer/` 或升级引擎、要重跑
+> `npm run build:viewer` 时才需要 `git submodule update --init && npm run vendor:install`；
+> 缺 vendor 时构建脚本会直接报错并给出这条命令，不会静默产出半成品。
+
+本地开发（要重新生成 `lib/` 与 `assets/viewer/`）：
 
 ```sh
 npm install
-npm run build          # tsdown → lib/index.js + lib/client.js
+git submodule update --init     # 仅重建 viewer 需要
+npm run vendor:install          # 仅重建 viewer 需要：装引擎依赖 + 打 dsh patch
+npm run build:release           # tsdown → lib/，并校验 assets/viewer/ 完整性
 ```
 
-装进 profile（需要 Web GUI 用 `web` profile）：
-
-```sh
-dsh plugin --profile web add /absolute/path/to/dsh-plugin-documd
-dsh web                # http://127.0.0.1:3080
-```
-
-从 GitHub 装（拉源码，pnpm 会跑本包的 `prepare` = `tsdown`）：
-
-```sh
-dsh plugin --profile web add github:bluesky8318/dsh-plugin-documd
-```
-
-pnpm ≥ 10 会拒绝首次 git 依赖的 build 脚本，按提示把包名写进 profile 的 `pnpm-workspace.yaml`：
+**兜底**：如果你的 profile 因为别的依赖（不是本包）仍然报 allowBuilds，按提示在 profile 的
+`pnpm-workspace.yaml` 里加：
 
 ```yaml
 allowBuilds:
   dsh-plugin-documd: true
 ```
 
-> 这等于允许安装期执行本包代码；建议固定提交：`github:bluesky8318/dsh-plugin-documd#<sha>`。
+但 0.1.1 起本包没有任何安装期脚本，正常情况下**不需要**这一项。
 
 装好后在会话里点文件链接（`dsh-resource://file/session/<sid>/<path>`），右侧栏会开出预览 tab。
-`assets/viewer/` 已在仓库里，所以**不需要**装完再构建 viewer。
 
 ## 支持的文件类型
 
@@ -114,8 +127,8 @@ git submodule update --init  # 上游引擎（.gitmodules 里钉死 SHA）
 npm run vendor:install       # 装上游依赖 + 打两处 dsh patch（已检出时不再下载）
 npm run typecheck           # tsc --noEmit（src + tests）
 npm run test:unit           # vitest：契约解析 / workspace 约束 / token / 真 HTTP 路由
-npm run build               # 宿主 lib/index.js + 浏览器 lib/client.js
-npm run build:viewer        # esbuild → assets/viewer（约 23 MB）
+npm run build:release       # tsdown → lib/（提交），并校验 assets/viewer/ 完整性
+npm run build:viewer        # 重建 assets/viewer（约 23 MB，需要 vendor 与 esbuild）
 npm run build:viewer:check  # 只校验产物完整性，不重建
 ```
 

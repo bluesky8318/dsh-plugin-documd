@@ -1,7 +1,11 @@
 node_modules/
-lib/
 *.log
 .DS_Store
+
+# `lib/` and `assets/viewer/` ARE committed on purpose: installing from
+# `github:` / codeload has no permission to run build scripts, so the package
+# must be runnable straight out of the tarball (see "安装时零构建" in README).
+# Rebuild them with `npm run build:release` before committing/tagging.
 
 # The engine is a git submodule pinned by .gitmodules/gitlink; its dependencies
 # are installed by `npm run vendor:install` (or `npm install` inside it), never
@@ -9,6 +13,3 @@ lib/
 vendor/markdown-viewer/node_modules/
 vendor/.markdown-viewer.tgz
 vendor/.markdown-viewer.sha
-
-# `assets/viewer/` IS committed: a GitHub install has no build step for it, and
-# the host half serves it read-only from the package.

@@ -83,10 +83,23 @@ if (process.argv.includes('--check')) {
   }
   check()
 } else {
+  // Only rebuilds need the upstream engine. Installing the plugin never does:
+  // `assets/viewer/` is committed and served as-is.
+  if (!fs.existsSync(path.join(vendorRoot, 'src'))) {
+    console.error(
+      `✗ ${vendorRoot} is empty.\n`
+        + '  The engine is a git submodule and codeload tarballs do not include it.\n'
+        + '  Checkout this repo as a developer and run:\n'
+        + '    git submodule update --init && npm run vendor:install\n'
+        + '  Installing the plugin itself does NOT need this step — the committed\n'
+        + '  `assets/viewer/` is used as-is.',
+    )
+    process.exit(1)
+  }
   if (!fs.existsSync(path.join(vendorRoot, 'node_modules', 'mermaid'))) {
     console.error(
       `✗ ${path.join(vendorRoot, 'node_modules')} is not installed.\n`
-        + 'Run `npm run vendor:install` first (it vendors the pinned upstream SHA and installs its dependencies).',
+        + 'Run `npm run vendor:install` first (it installs the pinned engine dependencies).',
     )
     process.exit(1)
   }

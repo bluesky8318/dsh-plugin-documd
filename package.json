@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-documd",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Right-sidebar file preview for DeepSeek Harness (dsh), rendering Markdown and code with the docu.md engine inside a sandboxed iframe.",
   "keywords": [
     "deepseek-harness",
@@ -52,13 +52,13 @@
   },
   "scripts": {
     "build": "tsdown",
+    "build:release": "tsdown && node scripts/build-viewer.mjs --check",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run",
     "vendor:install": "node scripts/vendor-install.mjs",
     "build:viewer": "node scripts/build-viewer.mjs",
     "build:viewer:check": "node scripts/build-viewer.mjs --check",
-    "dev:viewer": "node dev/serve-viewer.mjs",
-    "prepare": "tsdown"
+    "dev:viewer": "node dev/serve-viewer.mjs"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "~3.18.4"
