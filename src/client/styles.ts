@@ -24,6 +24,44 @@ const CSS = `
   font-size: 13px;
   line-height: 20px;
 }
+.dm-switch {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.08));
+  background: var(--dsw-alias-bg-layer-1, #f6f7f9);
+}
+.dm-switch-label {
+  color: var(--dsw-alias-label-secondary, #5f6368);
+  white-space: nowrap;
+}
+.dm-switch-select {
+  min-width: 0;
+  max-width: 260px;
+  padding: 2px 6px;
+  border: 0.5px solid var(--dsw-alias-border-l4, rgba(0, 0, 0, 0.18));
+  border-radius: var(--dsw-radius-md, 8px);
+  background: var(--dsw-alias-bg-base, #ffffff);
+  color: var(--dsw-alias-label-primary, #1f2023);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 20px;
+}
+.dm-switch-reset {
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--dsw-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, #5f6368);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 20px;
+  cursor: pointer;
+}
+.dm-switch-reset:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06)); }
 .dm-frame {
   flex: 1;
   width: 100%;

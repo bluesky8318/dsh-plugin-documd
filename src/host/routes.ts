@@ -10,6 +10,8 @@
  * | `GET /docu-preview/api/file` | document text (JSON) |
  * | `GET /docu-preview/api/asset` | binary asset by absolute/relative path |
  * | `GET /docu-preview/api/asset/<token>/<dir>/<name>` | relative image/asset rewrite target |
+ * | `GET /docu-preview/api/options` | preview mode/priority the client half registers with |
+ * | `GET /docu-preview/api/diagnostics` | the raw resolve chain (only when `debug: true`) |
  *
  * Everything is same-origin: the browser half and the viewer iframe both live on
  * the dsh web origin, so no CORS headers are emitted and cross-site POSTs are
@@ -29,9 +31,19 @@ import {
   resolveThemeId,
   type ApiErrorBody,
   type FileResponse,
+  type PreviewMode,
+  type PriorityBand,
   type SessionResponse,
 } from '../shared/contract'
-import { MissingFileError, OutsideWorkspaceError, WorkspacePaths, mimeFor, parseRange } from './paths'
+import {
+  MissingFileError,
+  OutsideWorkspaceError,
+  WorkspacePaths,
+  mimeFor,
+  parseRange,
+  type PathAttempt,
+  type RootResolver,
+} from './paths'
 import { TokenStore } from './tokens'
 
 /** Settings read at request time, so GUI edits apply without a reload. */
@@ -39,9 +51,15 @@ export interface RoutesOptions {
   /** Absolute directory holding the built viewer (`assets/viewer`). */
   readonly viewerRoot: string
   readonly workspaceRoot: () => string
+  /** Roots dsh reports for a session (cwd), falling back to the deployment root. */
+  readonly rootForSession: RootResolver
   readonly maxPreviewBytes: () => number
   readonly tokenTtlMs: () => number
   readonly themeId: () => string
+  readonly mode: () => PreviewMode
+  readonly priority: () => PriorityBand
+  readonly rememberChoice: () => boolean
+  readonly debug: () => boolean
   readonly log: (message: string) => void
 }
 
@@ -112,7 +130,7 @@ export function createRoutes(options: RoutesOptions): {
   paths: WorkspacePaths
 } {
   const tokens = new TokenStore()
-  const paths = new WorkspacePaths(options.workspaceRoot)
+  const paths = new WorkspacePaths(options.workspaceRoot, options.rootForSession)
 
   async function serveViewerAsset(relative: string, res: ServerResponse): Promise<void> {
     const requested = relative || 'index.html'
@@ -164,11 +182,26 @@ export function createRoutes(options: RoutesOptions): {
     const parsed = parseFileAddress(address)
     if (!parsed) return sendError(res, 400, 'bad_address', 'not a dsh-resource://file/ address')
 
+    const sessionId = parsed.scope === 'session' ? parsed.sessionId : undefined
+    const trace: PathAttempt[] = []
     let resolved
     try {
-      resolved = await paths.resolve(parsed.path)
+      resolved = await paths.resolve(parsed.path, sessionId, trace)
     } catch (error) {
-      return sendPathError(res, error)
+      return sendPathError(res, error, { address, sessionId, trace })
+    }
+
+    if (options.debug()) {
+      options.log(JSON.stringify({
+        event: 'resolve',
+        address,
+        scope: parsed.scope,
+        sessionId,
+        path: parsed.path,
+        roots: paths.roots(sessionId),
+        trace,
+        realPath: resolved.realPath,
+      }))
     }
 
     const limit = Math.max(1, options.maxPreviewBytes())
@@ -182,7 +215,7 @@ export function createRoutes(options: RoutesOptions): {
     }
 
     const filename = path.posix.basename(parsed.path.replace(/\\/g, '/'))
-    const record = tokens.issue(resolved.displayPath, filename, options.tokenTtlMs())
+    const record = tokens.issue(resolved.displayPath, filename, options.tokenTtlMs(), sessionId)
     const session: SessionResponse = {
       token: record.token,
       path: resolved.displayPath,
@@ -202,11 +235,12 @@ export function createRoutes(options: RoutesOptions): {
     const requested = url.searchParams.get('path') || record.path
     const binary = url.searchParams.get('binary') === '1'
 
+    const trace: PathAttempt[] = []
     let resolved
     try {
-      resolved = await paths.resolve(requested)
+      resolved = await paths.resolve(requested, record.sessionId, trace)
     } catch (error) {
-      return sendPathError(res, error)
+      return sendPathError(res, error, { address: record.path, sessionId: record.sessionId, trace })
     }
 
     const limit = Math.max(1, options.maxPreviewBytes())
@@ -259,11 +293,12 @@ export function createRoutes(options: RoutesOptions): {
     if (!record) return sendError(res, 401, 'bad_token', 'missing or expired preview token')
     if (!requested) return sendError(res, 400, 'bad_path', 'asset path is required')
 
+    const trace: PathAttempt[] = []
     let resolved
     try {
-      resolved = await paths.resolve(requested)
+      resolved = await paths.resolve(requested, record.sessionId, trace)
     } catch (error) {
-      return sendPathError(res, error)
+      return sendPathError(res, error, { address: record.path, sessionId: record.sessionId, trace })
     }
 
     const range = parseRange(req.headers.range, resolved.size)
@@ -288,7 +323,21 @@ export function createRoutes(options: RoutesOptions): {
     createReadStream(resolved.realPath).pipe(res)
   }
 
-  function sendPathError(res: ServerResponse, error: unknown): void {
+  function sendPathError(
+    res: ServerResponse,
+    error: unknown,
+    context?: { address: string; sessionId: string | undefined; trace: PathAttempt[] },
+  ): void {
+    if (context && options.debug()) {
+      options.log(JSON.stringify({
+        event: 'resolve_failed',
+        address: context.address,
+        sessionId: context.sessionId,
+        roots: paths.roots(context.sessionId),
+        trace: context.trace,
+        error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      }))
+    }
     if (error instanceof OutsideWorkspaceError) {
       sendError(res, 403, 'outside_workspace', error.message)
       return
@@ -299,6 +348,56 @@ export function createRoutes(options: RoutesOptions): {
     }
     options.log(`[${'dsh-plugin-documd'}] unexpected path error: ${String(error)}`)
     sendError(res, 500, 'internal', 'could not resolve the requested path')
+  }
+
+  function handleOptions(res: ServerResponse): void {
+    sendJson(res, 200, {
+      mode: options.mode(),
+      priority: options.priority(),
+      rememberChoice: options.rememberChoice(),
+    })
+  }
+
+  /**
+   * Expose the whole resolve chain.
+   *
+   * This is the "print the real inputs" surface for bug reports: raw address,
+   * parsed path, session, roots, per-candidate realpath/stat/containment. It
+   * only exists while `debug: true`, so a production install does not leak
+   * filesystem layout.
+   */
+  async function handleDiagnostics(url: URL, res: ServerResponse): Promise<void> {
+    if (!options.debug()) return sendError(res, 404, 'not_found', 'diagnostics are disabled (set debug: true)')
+
+    const address = url.searchParams.get('address') ?? ''
+    const parsed = address ? parseFileAddress(address) : undefined
+    const requested = parsed?.path ?? url.searchParams.get('path') ?? ''
+    const sessionId = parsed?.scope === 'session'
+      ? parsed.sessionId
+      : url.searchParams.get('session') ?? undefined
+    if (!requested) return sendError(res, 400, 'bad_path', 'address or path is required')
+
+    const trace: PathAttempt[] = []
+    let outcome: 'resolved' | 'outside' | 'missing' = 'missing'
+    let realPath: string | undefined
+    try {
+      const resolved = await paths.resolve(requested, sessionId, trace)
+      outcome = 'resolved'
+      realPath = resolved.realPath
+    } catch (error) {
+      outcome = error instanceof OutsideWorkspaceError ? 'outside' : 'missing'
+    }
+
+    sendJson(res, 200, {
+      outcome,
+      address: address || undefined,
+      scope: parsed?.scope,
+      sessionId,
+      requested,
+      roots: paths.roots(sessionId),
+      trace,
+      realPath,
+    })
   }
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -314,6 +413,14 @@ export function createRoutes(options: RoutesOptions): {
     }
     if (pathname === `${API_PREFIX}/session`) {
       return handleSession(req, res)
+    }
+    if (pathname === `${API_PREFIX}/options`) {
+      if (req.method !== 'GET') return sendError(res, 405, 'method_not_allowed', 'use GET')
+      return handleOptions(res)
+    }
+    if (pathname === `${API_PREFIX}/diagnostics`) {
+      if (req.method !== 'GET') return sendError(res, 405, 'method_not_allowed', 'use GET')
+      return handleDiagnostics(parsed, res)
     }
     if (pathname === `${API_PREFIX}/theme`) {
       if (req.method !== 'GET') return sendError(res, 405, 'method_not_allowed', 'use GET')

@@ -46,6 +46,18 @@ describe('parseFileAddress', () => {
     })
   })
 
+  it('decodes an encoded drive colon and non-ASCII names', () => {
+    expect(parseFileAddress('dsh-resource://file/absolute/C%3A/Users/a.md')).toEqual({
+      scope: 'absolute',
+      path: 'C:/Users/a.md',
+    })
+    expect(parseFileAddress('dsh-resource://file/session/s1/%E4%B8%AD%E6%96%87%20a.md')).toEqual({
+      scope: 'session',
+      sessionId: 's1',
+      path: '中文 a.md',
+    })
+  })
+
   it('ignores a query or hash tail', () => {
     expect(parseFileAddress('dsh-resource://file/session/s1/a.md?line=3')).toMatchObject({
       path: 'a.md',

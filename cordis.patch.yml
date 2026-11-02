@@ -4,8 +4,19 @@
     - id: dsh-plugin-documd
       name: dsh-plugin-documd
       config:
-        # viewer 允许读取的工作区根目录；留空时以宿主进程的当前目录为准。
-        # 多个根目录用 `;` 分隔。所有读取都会 realpath 后校验落在这个根内。
+        # 预览策略：manual（默认，不抢右侧栏 tab，只出现在官方“打开方式”下拉里）、
+        # auto（按 priority 抢 tab）、off（不注册任何预览入口，等于停用本插件）。
+        mode: manual
+        # auto 模式下的竞争档位：extension > builtin > fallback。默认 builtin，
+        # 保证不会无条件压过将来安装的其它 extension 级预览插件。
+        priority: builtin
+        # 在预览界面切换渲染方后，按扩展名记住选择（localStorage）；false 则每次重置。
+        rememberChoice: true
+        # 打开 /api/diagnostics 与路径解析日志（排障用，平时关掉）。
+        debug: false
+        # viewer 允许读取的工作区根目录；留空时按地址作用域取：
+        # session 的 header.cwd -> sandboxPolicy.workspaceRoot -> 本配置 -> process.cwd()。
+        # 多个根目录用 `;` 分隔。所有读取都会归一化并 realpath 校验落在这个根内。
         workspaceRoot: ''
         # 初始主题：auto（跟随 dsh 明暗）、vscode、vscode-dark 或任意 themes/registry.json 里的 id。
         themeId: auto

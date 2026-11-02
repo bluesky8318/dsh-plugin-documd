@@ -16,6 +16,8 @@ export interface TokenRecord {
   readonly token: string
   /** Path the token was issued for (workspace-relative or absolute). */
   readonly path: string
+  /** Session whose workspace scoped the issuance; `undefined` for absolute addresses. */
+  readonly sessionId: string | undefined
   readonly filename: string
   readonly expiresAt: number
 }
@@ -41,13 +43,15 @@ export class TokenStore {
    * @param path - path the viewer may read.
    * @param filename - basename shown in the UI.
    * @param ttlMs - lifetime in milliseconds.
+   * @param sessionId - session whose workspace scopes later reads.
    * @returns the record, including the token string.
    */
-  issue(path: string, filename: string, ttlMs: number): TokenRecord {
+  issue(path: string, filename: string, ttlMs: number, sessionId?: string): TokenRecord {
     const token = randomBytes(24).toString('hex')
     const record: TokenRecord = {
       token,
       path,
+      sessionId,
       filename,
       expiresAt: Date.now() + Math.max(1_000, ttlMs),
     }

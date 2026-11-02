@@ -14,6 +14,9 @@ export type DocumdLocaleKey =
   | 'viewer.loading'
   | 'viewer.error'
   | 'viewer.retry'
+  | 'switch.label'
+  | 'switch.current'
+  | 'switch.reset'
   | 'native.openExternal'
   | 'native.pdf'
   | 'unsupported.title'
@@ -27,6 +30,9 @@ export const en: Record<DocumdLocaleKey, string> = {
   'viewer.loading': 'Rendering with docu.md…',
   'viewer.error': 'Preview failed: {message}',
   'viewer.retry': 'Retry',
+  'switch.label': 'Preview with',
+  'switch.current': 'docu.md (this plugin)',
+  'switch.reset': 'Reset default',
   'native.openExternal': 'Open in a new tab',
   'native.pdf': 'PDF preview',
   'unsupported.title': 'This file type is not previewed yet',
@@ -41,6 +47,9 @@ export const zh: Record<DocumdLocaleKey, string> = {
   'viewer.loading': '正在用 docu.md 渲染…',
   'viewer.error': '预览失败：{message}',
   'viewer.retry': '重试',
+  'switch.label': '预览方式',
+  'switch.current': 'docu.md（本插件）',
+  'switch.reset': '恢复默认',
   'native.openExternal': '在新标签页打开',
   'native.pdf': 'PDF 预览',
   'unsupported.title': '暂不支持预览该文件类型',

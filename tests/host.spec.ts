@@ -65,6 +65,69 @@ describe('WorkspacePaths', () => {
   })
 })
 
+describe('WorkspacePaths equivalence rules', () => {
+  const paths = () => new WorkspacePaths(() => root)
+  const sessionRoots = (sessionId: string | undefined) => (sessionId === 'live' ? [root] : [])
+
+  beforeAll(() => {
+    fs.writeFileSync(path.join(root, 'docs', '中文 空格.md'), '# 中文\n')
+  })
+
+  it('uses the session workspace for a session address', async () => {
+    const scoped = new WorkspacePaths(() => '', sessionRoots)
+    const resolved = await scoped.resolve('docs/中文 空格.md', 'live')
+    expect(resolved.displayPath).toBe('docs/中文 空格.md')
+    expect(scoped.roots('live')).toEqual([path.resolve(root)])
+  })
+
+  it('does not leak the session root to another session', async () => {
+    const scoped = new WorkspacePaths(() => '', sessionRoots)
+    await expect(scoped.resolve('docs/a.md', 'other')).rejects.toBeInstanceOf(MissingFileError)
+  })
+
+  it('accepts either separator', async () => {
+    await expect(paths().resolve('docs\\a.md')).resolves.toBeDefined()
+    await expect(paths().resolve('docs/a.md')).resolves.toBeDefined()
+  })
+
+  it('normalizes dot segments instead of trusting the string', async () => {
+    const resolved = await paths().resolve('docs/../docs/a.md')
+    expect(resolved.displayPath).toBe('docs/../docs/a.md')
+  })
+
+  it('treats drive letters as case-insensitive', async () => {
+    if (process.platform !== 'win32') return
+    const upper = path.resolve(root).toUpperCase()
+    const insensitive = new WorkspacePaths(() => upper)
+    await expect(insensitive.resolve('docs/a.md')).resolves.toBeDefined()
+  })
+
+  it('contains an absolute path under the session root', async () => {
+    const scoped = new WorkspacePaths(() => '', sessionRoots)
+    const absolute = path.join(root, 'docs', 'a.md')
+    await expect(scoped.resolve(absolute, 'live')).resolves.toBeDefined()
+  })
+
+  it('keeps the fence for absolute paths outside every root', async () => {
+    await expect(paths().resolve(outsideFile)).rejects.toBeInstanceOf(OutsideWorkspaceError)
+  })
+
+  it('follows a workspace reached through a junction', async () => {
+    if (process.platform !== 'win32') return
+    const link = path.join(sandbox, 'workspace-link')
+    try {
+      fs.symlinkSync(root, link, 'junction')
+    } catch {
+      // Some Windows hosts refuse junction creation without developer mode.
+      return
+    }
+    if (!fs.existsSync(link)) return
+    const linked = new WorkspacePaths(() => link)
+    const resolved = await linked.resolve('docs/a.md')
+    expect(resolved.realPath.startsWith(path.resolve(root))).toBe(true)
+  })
+})
+
 describe('TokenStore', () => {
   it('issues, resolves and revokes', () => {
     const store = new TokenStore()
@@ -117,10 +180,17 @@ describe('createRoutes over HTTP', () => {
   beforeAll(async () => {
     const options: RoutesOptions = {
       viewerRoot,
-      workspaceRoot: () => root,
+      // Empty on purpose: session addresses must resolve through `rootForSession`
+      // (dsh's `session.header.cwd`), not through a config default.
+      workspaceRoot: () => '',
+      rootForSession: (sessionId) => (sessionId === 's1' ? [root] : []),
       maxPreviewBytes: () => 1024 * 1024,
       tokenTtlMs: () => 60_000,
       themeId: () => 'auto',
+      mode: () => 'manual',
+      priority: () => 'builtin',
+      rememberChoice: () => true,
+      debug: () => true,
       log: () => {},
     }
     const routes = createRoutes(options)
@@ -231,5 +301,35 @@ describe('createRoutes over HTTP', () => {
     const response = await fetch(`${base}/docu-preview/api/nope`)
     expect(response.status).toBe(404)
     expect(((await response.json()) as { error: string }).error).toBe('not_found')
+  })
+
+  it('reports the options the client registers with', async () => {
+    const response = await fetch(`${base}/docu-preview/api/options`)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ mode: 'manual', priority: 'builtin', rememberChoice: true })
+  })
+
+  it('exposes the resolve chain for the real address shape', async () => {
+    const address = 'dsh-resource://file/session/s1/docs/a.md'
+    const response = await fetch(`${base}/docu-preview/api/diagnostics?address=${encodeURIComponent(address)}`)
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      outcome: string
+      sessionId: string
+      roots: string[]
+      trace: { candidate: string; contained?: boolean; stat?: string }[]
+    }
+    expect(body.outcome).toBe('resolved')
+    expect(body.sessionId).toBe('s1')
+    expect(body.roots).toEqual([path.resolve(root)])
+    expect(body.trace[0]?.stat).toBe('file')
+    expect(body.trace[0]?.contained).toBe(true)
+  })
+
+  it('classifies an out-of-workspace address as outside in diagnostics', async () => {
+    const address = formatFileAddress('dsh-resource://file/absolute/C:/x', outsideFile) ?? ''
+    const response = await fetch(`${base}/docu-preview/api/diagnostics?address=${encodeURIComponent(address)}`)
+    const body = (await response.json()) as { outcome: string }
+    expect(body.outcome).toBe('outside')
   })
 })

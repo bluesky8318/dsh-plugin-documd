@@ -11,18 +11,45 @@ own host half. GPL-3.0-only, because the engine is GPL-3.0-only.
 
 | 项目 | 结论 |
 | --- | --- |
-| 宿主半边（HTTP + token + 路径约束） | ✅ 已跑通（38 条单测 + 真 HTTP 请求） |
+| 宿主半边（HTTP + token + 路径约束） | ✅ 已跑通（63 条单测 + 0.1.5 真 `dsh web` HTTP 请求） |
+| workspace 路径解析（0.1.5 修复） | ✅ 已实测：session 地址（中文/空格）200、absolute 地址 200、workspace 外 403（详见下节） |
 | viewer 静态产物 | ✅ 已构建并**提交**在 `assets/viewer/`（34 套主题、mermaid、KaTeX 字体、_locales） |
 | viewer 渲染 Markdown/代码/Mermaid/KaTeX/相对图片 | ✅ 裸浏览器实测通（截图见 [docs/dev-harness-render.png](docs/dev-harness-render.png)） |
-| 客户端 tab 注册（`sidebarRightTabs` + `sidebar.right.pane.tab`） | ⚠️ 类型检查 + 构建通过；**未在真 dsh GUI 里加载验证**（本机有 dsh CLI，但未启动 GUI 点开文件） |
+| 客户端 tab 注册（`sidebarRightTabs` + `sidebar.right.pane.tab`） | ⚠️ 类型检查 + 构建 + 纯函数单测通过；**仍需在真 dsh GUI 里点开文件确认** |
 | 降级链（PDF/图片内嵌、Office 卡片 + 其它 viewer 挂载点） | ✅ 代码就绪；同样只做过类型/构建验证 |
 | 安装时零构建（`pnpm add github:…#sha` 不跑脚本） | ✅ 实测：无任何安装期脚本，`lib/` 与 `assets/viewer/` 随包分发 |
 | host 半边在「无 node_modules 的本地 clone」下可 import | ✅ 实测：0.1.3 起所有运行时依赖已内联，`lib/index.js` 只剩 `node:*` import |
 | `github:` 安装（pnpm 会递归初始化 submodule） | ✅ 0.1.4 起仓库无 `.gitmodules`，安装不再触发上游引擎的 SSH submodule 拉取 |
 | dsh 0.2.1-rc.5 兼容闸门（`requirements`） | ✅ 实测：用 dsh 自带 `evaluatePluginCompatibility` + 真 CLI 判定通过 |
 
-> 诚实边界：tab 能不能在真 dsh 里命中，只有装上 `dsh web` 才能证明。本仓库做到的是
-> 「宿主半边真跑通 + viewer 真渲染」，客户端半边到「类型/构建/协议按 npm 包 `.d.ts` 对齐」为止。
+> 诚实边界：0.1.5 已在真 `dsh web` 进程里用 HTTP 打通「真实 URI → 路径 → 读文件」整条链路，
+> 但「客户端 tab 在 GUI 里点开」仍需一次真机手点确认。等价性依据见
+> [docs/0.1.5-verification.md](docs/0.1.5-verification.md)。
+
+## 0.1.5 修了什么：`no such file in the workspace`
+
+**根因**：dsh 对 workspace 内的文件给出的是 `dsh-resource://file/session/<sid>/<相对路径>`
+（session 作用域 + 相对路径）。0.1.4 的 `WorkspacePaths.roots()` 在 `workspaceRoot` 配置留空时
+回退到 `process.cwd()`——而桌面版 dsh 的进程 cwd 是应用/用户目录，不是会话的工作区，于是
+`docs/a.md` 被拼到错误目录，`realpath` 全部失败，最终抛 `no such file in the workspace`。
+
+**0.1.5 的解析顺序**（与 dsh 官方 workspace 文件服务一致）：
+
+1. `session` 作用域 → `ctx.sessions.get(sessionId)?.header.cwd`（会话真实工作区）；
+2. 取不到 → `ctx.sandboxPolicy.workspaceRoot`（部署/打开的默认工作区）；
+3. 再取不到 → 配置里的 `workspaceRoot`（`;` / `,` 分隔多根），最后才回退 `process.cwd()`。
+
+**等价路径规则**（不再用字符串前缀比较）：
+
+- 相对路径按每个根 `path.resolve`；正/反斜杠都接受；`.` / `..` 先归一化再判断；
+- 每个候选同时收集 `path.resolve(root)` 与 `fs.realpath(root)`（junction / symlink 下的真实根）；
+- 候选文件先 `fs.realpath`，**失败时回退到归一化路径**（文件不存在也要能给出 404 而不是误判越权）；
+- 包含性用 `path.relative(root, target)` 判断，Windows 盘符大小写不敏感；
+- 归一化后仍不在任何根内 → **403 `outside_workspace`**，围栏保留。
+
+`debug: true` 时可 `GET /docu-preview/api/diagnostics?address=…` 看到真实输入：原始 URI、
+解码后的 path、命中的 roots、每个候选的 `candidate/realPath/stat/contained/fallback`。
+
 
 ## 安装（安装时零构建）
 
@@ -33,16 +60,16 @@ own host half. GPL-3.0-only, because the engine is GPL-3.0-only.
 
 ```sh
 # desktop profile（报错里出现的 profile 就走这个）
-dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v0.1.4
+dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v0.1.5
 
 # web profile 同理
-dsh plugin --profile web add github:bluesky8318/dsh-plugin-documd#v0.1.4
+dsh plugin --profile web add github:bluesky8318/dsh-plugin-documd#v0.1.5
 
 dsh                    # 起 GUI，点会话里的文件链接即可在右侧栏预览
 ```
 
-`#v0.1.4` 是 tag，也可以钉提交：`github:bluesky8318/dsh-plugin-documd#<sha>`（
-v0.1.4 对应提交见仓库 Releases / `git rev-list -n1 v0.1.4`）。
+`#v0.1.5` 是 tag，也可以钉提交：`github:bluesky8318/dsh-plugin-documd#<sha>`（
+v0.1.5 对应提交见仓库 Releases / `git rev-list -n1 v0.1.5`）。
 
 > **仓库里没有 git submodule（0.1.4 起）。** pnpm 装 git 依赖时会执行
 > `git submodule update --init --recursive`，而上游引擎自己的嵌套 submodule 用的是 SSH URL，
@@ -71,9 +98,14 @@ allowBuilds:
 
 但 0.1.1 起本包没有任何安装期脚本，正常情况下**不需要**这一项。
 
-装好后在会话里点文件链接（`dsh-resource://file/session/<sid>/<path>`），右侧栏会开出预览 tab。
+装好后在会话里点文件链接（`dsh-resource://file/session/<sid>/<path>`）。**默认 `mode: manual`：
+本插件不会抢右侧栏的 tab**，官方预览保持默认；在预览界面的「打开方式 / 预览方式」下拉里选
+`docu.md` 才会用本插件渲染（见下节）。想让它自动接管，把 `mode` 调成 `auto`。
 
 ## 支持的文件类型
+
+> 下表是 `mode: auto`（本插件参与 tab 竞争）时的行为；默认 `mode: manual` 下这些 kind
+> 不会注册到右侧栏，只保留官方「打开方式」里的文本渲染入口。
 
 | 类型 | kind | 行为 |
 | --- | --- | --- |
@@ -88,12 +120,59 @@ allowBuilds:
 扩展名清单在 [src/shared/contract.ts](src/shared/contract.ts)；代码扩展名与上游
 `src/utils/extension-categories.ts` 的 `EXT_LANG_MAP` 镜像，升级 vendor 时需对照。
 
+## 预览方式切换（0.1.5）
+
+dsh 的 tab 竞争规则（来自 asar 内 `sidebar-right` 实现）：
+
+- `priority` 是三档：`extension`(3) > `builtin`(2) > `fallback`(1)。官方文本预览是 `fallback`；
+  同档内按匹配 pattern 的**字符串长度降序**，再按注册顺序；
+- `canOpen(address)` 为假时该 tab 不参与；
+- **同一种 `kind` 只能有一个定义在 force**（两个 `extension` 同 kind 会被判为 wiring 错误）；
+- `ctx.sidebarRightTabs.candidates(address)` 返回按优先级排好的候选；
+  `ctx.sidebarRight.openResource(address, { kind, replaceTab })` 可以在**运行时**按 kind
+  重开，并替换当前 tab——所以切换不需要重启。
+
+本插件的策略：
+
+| 配置 | 默认值 | 含义 |
+| --- | --- | --- |
+| `mode` | `manual` | `manual`：不 claim 文本/PDF/图片的右侧栏 tab，只把本插件注册进官方 `documentPreviews`（「打开方式」下拉），并保留 `builtin` 的 unsupported 提示卡（只有没有更高优先级渲染方时才出现）；`auto`：按 `priority` claim tab，能和官方预览“抢”；`off`：完全不注册任何 tab / 下拉项 |
+| `priority` | `builtin` | `auto` 模式下本插件声明的档位：`extension` / `builtin` / `fallback`。默认 `builtin` **低于**自己声明的 `extension`，保证不会无条件压过未来安装的 `dsh-docx` / `dsh-pptx` 等 |
+| `rememberChoice` | `true` | 在 tab 顶部的「预览方式」下拉里切换后，按**扩展名**记到 `localStorage`；下次打开同类文件直接使用上次选择（`恢复默认` 清除） |
+| `debug` | `false` | 打开 `/api/diagnostics` 与解析日志（排障用，平时别开） |
+
+切换入口有三处，互相一致：
+
+1. **官方「打开方式」下拉**（`ctx.documentPreviews`，本插件注册 id `dsh-plugin-documd/viewer`，
+   `priority: 'builtin'`）——覆盖文本类可渲染扩展名；官方 markdown 预览先注册，所以默认仍是官方；
+2. **本插件 tab 顶部工具条**（`auto` 模式下可见）——列出 `candidates()` 里除自己以外的所有渲染方，
+   选中即 `openResource(address, { kind, replaceTab: 当前 tab })`；
+3. **unsupported 提示卡**（`.docx/.xlsx/...`）——卡片上的按钮就是同一个 `candidates()` 候选列表，
+   将来装了 Office 类插件会自动出现并可直接转交。
+
+> 限制（不假装）：官方 `documentPreviews` 只处理 `loading: 'text-pages'` 的文本内容，内嵌图片、
+> PDF 仍走本插件自己的 native tab 或 dsh 工具栏的「用系统程序打开」；`off` 需要重载插件/重启 dsh 生效。
+
+### 彻底关掉本插件
+
+1. 最彻底：`dsh plugin --profile <name> remove dsh-plugin-documd`（或从 profile 的 bundles 里删掉）；
+2. 只停用渲染：在 profile 的 `cordis.patch.yml`（或 settings 面板）把本行配置改成
+   ```yaml
+   - id: dsh-plugin-documd
+     name: dsh-plugin-documd
+     config:
+       mode: off
+   ```
+   默认是 `manual`（本来就不抢 tab）；改成 `off` 后连「打开方式」里的 `docu.md` 也不再出现。
+   配置是 volatile 引用，改完后重新加载插件/重启 dsh 生效。
+
 ## 架构
 
 ```
 浏览器（dsh client 半边）
-  ctx.sidebarRightTabs.register({id, kind, patterns, priority:'extension', title, canOpen})
+  ctx.sidebarRightTabs.register({id, kind, patterns, priority:<配置档位>, title, canOpen})
   ctx.slots.register('sidebar.right.pane.tab', {key: <id>, locale, inject}) → React 组件
+  ctx.documentPreviews.register({ id:'dsh-plugin-documd/viewer', priority:'builtin', extensions })
         │  POST /docu-preview/api/session   （地址 → 一次性 token + 分类 + 主题）
         │  GET  /docu-preview/api/file      （按 token 读文本）
         ▼
@@ -103,6 +182,8 @@ allowBuilds:
         ▼
 宿主（Cordis 插件，ctx.webServer 同源挂载 /docu-preview）
   GET  /viewer/*               静态 viewer（assets/viewer）
+  GET  /api/options            当前 mode / priority / rememberChoice
+  GET  /api/diagnostics        仅 debug:true，回显 URI→path→roots→trace
   POST /api/session            签发 token（校验 Origin、workspace realpath、大小上限）
   GET  /api/file               读文本
   GET  /api/asset[?path=]      二进制 / 相对图片（Range 206）
@@ -111,18 +192,20 @@ allowBuilds:
 
 关键约束：
 
-- **workspace 约束**在 realpath 上做（`fs.realpath` + `path.relative` 包含性检查），`..` 直接拒绝；
-  多根用 `;` 或 `,` 分隔，空值回落 `process.cwd()`。
-- **一次性 token**：`randomBytes(24)`，绑定一个文档路径，`tokenTtlMs` 过期，tab 关闭即 `DELETE`。
-   viewer 拿不到会话凭证，只能读这一个文件及其目录下的资产。
+- **workspace 约束**按地址作用域取根（session `header.cwd` → `sandboxPolicy.workspaceRoot` →
+  配置根 → `process.cwd()`），对「归一化路径 + realpath」双重包含性检查；盘符大小写不敏感，
+  realpath 失败回退归一化路径；越权返回 403。多根用 `;` 或 `,` 分隔。
+- **一次性 token**：`randomBytes(24)`，绑定一个文档路径与 `sessionId`，`tokenTtlMs` 过期，tab 关闭即 `DELETE`。
+  viewer 拿不到会话凭证，只能读这一个文件及其目录下的资产。
 - **同源**：浏览器半边与 iframe 都在 dsh web 源上，不写 CORS 头；跨站 POST 被 Origin 检查拒绝。
 - **主题**：客户端从 `data-theme`/class/背景亮度/`matchMedia` 探测明暗，经 `/api/theme` 映射成
   `vscode` / `vscode-dark`，用 `SYNC_HOST_UI` 推给 viewer；变化（属性变动或系统主题切换）实时同步。
 - **滚动**：viewer 冒泡 `scrolllinechange` → `VIEWER_SCROLL_LINE_CHANGED` → 客户端按地址记住行号，
   重开同一文件时用 `OPEN_DOCUMENT.targetLine` 恢复。
-- **降级链**：三类 tab 全部 `priority:'extension'`（高于官方 `text` 的 `fallback`）；
+- **不抢默认**：默认 `mode: manual` 只注册 `documentPreviews`（官方「打开方式」下拉）；
+  `auto` 才按配置 `priority` claim tab（不再硬编码 `extension`）；
   unsupported 卡通过 `ctx.sidebarRightTabs.candidates(address)` 发现其它插件声明的 kind，并
-  `ctx.sidebarRight.openResource(address, {kind})` 转交——这就是预留的
+  `ctx.sidebarRight.openResource(address, {kind, replaceTab})` 转交——这就是预留的
   `dsh-docx` / `dsh-pptx` / `dsh-opensheet-sidebar` 接口。
 
 ## 开发
@@ -168,10 +251,12 @@ src/
   shared/contract.ts    路由/地址解析/扩展名分类/主题（host 与 client 共用，无 node: 依赖）
   host/paths.ts         workspace realpath 约束、MIME、Range
   host/tokens.ts        一次性 token 表
-  host/routes.ts        /viewer/*、/api/{session,file,asset,theme}
-  client/index.ts       inject slots/locale/sidebarRightTabs/sidebarRight；注册字典 + 样式 + tab
-  client/registration.ts  三个定义 + 三个 sidebar.right.pane.tab 体
-  client/preview-tab.tsx  iframe + postMessage 桥（OPEN_DOCUMENT / SCROLL / 主题 / 导航）
+  host/routes.ts        /viewer/*、/api/{options,diagnostics,session,file,asset,theme}
+  client/index.ts       inject slots/locale/sidebarRightTabs/sidebarRight/documentPreviews；注册字典 + 样式 + tab
+  client/registration.ts  按 mode/priority 纯函数规划注册；三个定义 + 三个 pane.tab 体
+  client/options.ts     读取 /api/options（mode/priority/rememberChoice）
+  client/preferences.ts localStorage 按扩展名记住「预览方式」选择
+  client/preview-tab.tsx  iframe + postMessage 桥 + 顶部「预览方式」下拉
   client/native-tab.tsx   PDF / 图片内嵌
   client/unsupported-tab.tsx  提示卡 + 其它 viewer 挂载点
 viewer/
@@ -182,7 +267,7 @@ vendor/markdown-viewer/ 上游引擎（不入库，由 `npm run vendor:install` 
 assets/viewer/          构建产物（已提交）
 scripts/                vendor-install / patch-vendor / build-viewer
 dev/                    serve-viewer.mjs + harness.html + sample
-tests/                  contract.spec.ts / host.spec.ts
+tests/                  contract.spec.ts / host.spec.ts / policy.spec.ts
 ```
 
 ## 升级 docu.md 引擎
@@ -284,8 +369,12 @@ dsh 安装插件时会读插件 `package.json` 的 **`peerDependencies`** 作为
 
 ## 已知限制
 
-- 客户端 tab 未在真 dsh GUI 里验证（本机无 dsh）；tab 命中依赖 `patterns`/`canOpen` 与官方
-  `documentpreview` 的地址格式一致，已按 npm 包 `.d.ts` 对齐，但仍需一次真机确认。
+- 0.1.5 已用真 `dsh web --no-open` + 真实 `dsh-resource://` URI 打通 HTTP 链路（200/403 有记录），
+  但**客户端 tab 的 GUI 点选仍未手点验证**；tab 命中依赖 `patterns`/`canOpen` 与官方
+  `documentpreview` 的地址格式一致，已按 npm 包 `.d.ts` 对齐。
+- 默认 `mode: manual` 不抢 tab；如果期望「点文件就出 docu.md」，需要显式配置 `mode: auto`。
+- 官方 `documentPreviews` 入口只覆盖文本类（`loading: 'text-pages'`）；PDF/图片的内嵌仍由本插件
+  native tab 提供，系统程序打开仍走 dsh 工具栏。
 - viewer 只读文本：`maxPreviewBytes`（默认 8 MiB）以上的文件直接拒绝（413），超长文件不做分页。
 - 相对图片/资产读取限定在 workspace 根内（含符号链接 realpath 检查）；文档引用根目录之外的文件
   会得到 403，而不是渲染失败。

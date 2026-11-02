@@ -299,6 +299,21 @@ type SchemaOutput<T, M extends SchemaMode> = M extends 'volatile' ? Volatile$1<T
 type SetRequired<M extends SchemaMode, R extends boolean> = M extends 'volatile' | 'volatile-defined' ? R extends true ? 'volatile-defined' : 'volatile' : R extends true ? 'defined' : 'plain';
 type Schema<S = any, T = S, Mode extends SchemaMode = 'plain'> = Schemastery<S, T, Mode>;
 declare const Schema: Schemastery.Static;
+/**
+ * How the plugin participates in dsh's tab competition.
+ *
+ * - `manual` (default): never claims an address at tab level. The viewer is
+ *   only reachable through dsh's own `打开方式` list, so the built-in preview
+ *   stays in charge.
+ * - `auto`: additionally registers tab kinds for the extensions it can render;
+ *   `priority` decides who wins against dsh's own definitions.
+ * - `off`: registers nothing at all.
+ */
+declare const PREVIEW_MODES: readonly ["manual", "auto", "off"];
+type PreviewMode = (typeof PREVIEW_MODES)[number];
+/** dsh tab bands, highest first: `extension` > `builtin` > `fallback`. */
+declare const PRIORITY_BANDS: readonly ["extension", "builtin", "fallback"];
+type PriorityBand = (typeof PRIORITY_BANDS)[number];
 /** 宿主插件名，须与 package.json 的 name 及 cordis.patch.yml 的 id 一致。 */
 declare const name = "dsh-plugin-documd";
 /** 依赖的服务：webServer 就绪后本插件才会加载。 */
@@ -307,7 +322,11 @@ declare const inject: string[];
  * 插件配置。每个字段都是 Volatile 引用，用户改写后无需重启宿主。
  */
 interface Config {
-  /** viewer 允许读取的工作区根目录；空值以宿主进程的当前目录为准，多个根用 `;` 分隔。 */
+  /**
+   * 额外允许的工作区根目录；空值表示完全跟随 dsh 自己报告的根
+   * （session 地址用 `session.header.cwd`，其余用 `sandboxPolicy.workspaceRoot`）。
+   * 多个根用 `;` 或 `,` 分隔。
+   */
   workspaceRoot: Volatile<string>;
   /** 初始主题：`auto`、`vscode`、`vscode-dark`，或 themes/registry.json 里的任意 id。 */
   themeId: Volatile<string>;
@@ -315,6 +334,17 @@ interface Config {
   maxPreviewBytes: Volatile<number>;
   /** 每个标签页签发的能力令牌有效期（毫秒）。 */
   tokenTtlMs: Volatile<number>;
+  /**
+   * 预览接管策略：`manual`（默认）只在 dsh 的「打开方式」里出现，不抢标签页；
+   * `auto` 额外注册标签页类型（按 `priority` 竞争）；`off` 什么都不注册。
+   */
+  mode: Volatile<PreviewMode>;
+  /** `auto` 下的竞争档位：`extension` > `builtin` > `fallback`。 */
+  priority: Volatile<PriorityBand>;
+  /** 预览页里的「预览方式」选择是否按扩展名记住（默认记住）。 */
+  rememberChoice: Volatile<boolean>;
+  /** 打开路径诊断日志与 `/docu-preview/api/diagnostics`。 */
+  debug: Volatile<boolean>;
 }
 /**
  * Schemastery schema：默认值写在这里，cordis.yml 与 GUI 改写都会经过它校验。
@@ -325,11 +355,19 @@ declare const Config: Schema<Schemastery.ObjectS<NoInfer<{
   themeId: Schema<string, string, "volatile-defined">;
   maxPreviewBytes: Schema<number, number, "volatile-defined">;
   tokenTtlMs: Schema<number, number, "volatile-defined">;
+  mode: Schema<"auto" | "manual" | "off", "auto" | "manual" | "off", "volatile-defined">;
+  priority: Schema<"extension" | "builtin" | "fallback", "extension" | "builtin" | "fallback", "volatile-defined">;
+  rememberChoice: Schema<boolean, boolean, "volatile-defined">;
+  debug: Schema<boolean, boolean, "volatile-defined">;
 }>>, Schemastery.ObjectT<NoInfer<{
   workspaceRoot: Schema<string, string, "volatile-defined">;
   themeId: Schema<string, string, "volatile-defined">;
   maxPreviewBytes: Schema<number, number, "volatile-defined">;
   tokenTtlMs: Schema<number, number, "volatile-defined">;
+  mode: Schema<"auto" | "manual" | "off", "auto" | "manual" | "off", "volatile-defined">;
+  priority: Schema<"extension" | "builtin" | "fallback", "extension" | "builtin" | "fallback", "volatile-defined">;
+  rememberChoice: Schema<boolean, boolean, "volatile-defined">;
+  debug: Schema<boolean, boolean, "volatile-defined">;
 }>>, "plain">;
 /**
  * 插件主体：注册路由，插件停用时撤销路由并吊销所有令牌。

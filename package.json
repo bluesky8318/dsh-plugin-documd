@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-documd",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Right-sidebar file preview for DeepSeek Harness (dsh), rendering Markdown and code with the docu.md engine inside a sandboxed iframe.",
   "keywords": [
     "deepseek-harness",
@@ -43,6 +43,7 @@
     "client": {
       "platform": "web",
       "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar-documentpreview",
         "@deepseek-ai/dsh-client-ui-sidebar-right"
       ]
     }
@@ -61,7 +62,6 @@
     "build:viewer:check": "node scripts/build-viewer.mjs --check",
     "dev:viewer": "node dev/serve-viewer.mjs"
   },
-  "dependencies": {},
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.5",
     "@deepseek-ai/dsh-tools": "0.2.1-rc.5"
@@ -71,6 +71,7 @@
     "@deepseek-ai/dsh-client-locale": "0.2.1-rc.5",
     "@deepseek-ai/dsh-client-ui-plugin-manager": "0.2.1-rc.5",
     "@deepseek-ai/dsh-client-ui-renderer": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-client-ui-sidebar-documentpreview": "0.2.1-rc.5",
     "@deepseek-ai/dsh-client-ui-sidebar-right": "0.2.1-rc.5",
     "@deepseek-ai/dsh-client-ui-slots": "0.2.1-rc.5",
     "@deepseek-ai/dsh-host-webserver": "0.2.1-rc.5",

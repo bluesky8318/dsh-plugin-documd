@@ -33,6 +33,32 @@ export const NATIVE_KIND = 'documd-native'
 export const UNSUPPORTED_TAB_ID = `${PLUGIN_ID}:unsupported`
 /** Tab kind claimed for office/archive files this plugin cannot render. */
 export const UNSUPPORTED_KIND = 'documd-unsupported'
+/**
+ * Renderer id inside dsh's own document-preview registry
+ * (`@deepseek-ai/dsh-client-ui-sidebar-documentpreview`). Registering here makes
+ * the viewer appear in the preview tab's `打开方式` list without claiming the
+ * address at tab level.
+ */
+export const DOCUMENT_BODY_ID = `${PLUGIN_ID}/viewer`
+
+/**
+ * How the plugin participates in dsh's tab competition.
+ *
+ * - `manual` (default): never claims an address at tab level. The viewer is
+ *   only reachable through dsh's own `打开方式` list, so the built-in preview
+ *   stays in charge.
+ * - `auto`: additionally registers tab kinds for the extensions it can render;
+ *   `priority` decides who wins against dsh's own definitions.
+ * - `off`: registers nothing at all.
+ */
+export const PREVIEW_MODES = ['manual', 'auto', 'off'] as const
+export type PreviewMode = (typeof PREVIEW_MODES)[number]
+export const DEFAULT_PREVIEW_MODE: PreviewMode = 'manual'
+
+/** dsh tab bands, highest first: `extension` > `builtin` > `fallback`. */
+export const PRIORITY_BANDS = ['extension', 'builtin', 'fallback'] as const
+export type PriorityBand = (typeof PRIORITY_BANDS)[number]
+export const DEFAULT_PRIORITY: PriorityBand = 'builtin'
 
 /** Markdown files the docu.md engine renders as documents. */
 export const MARKDOWN_EXTENSIONS = ['.md', '.markdown'] as const
@@ -236,6 +262,28 @@ export function formatFileAddress(address: string, path: string): string | undef
     return `${FILE_ADDRESS_PREFIX}session/${encodeURIComponent(parsed.sessionId)}/${encoded}`
   }
   return `${FILE_ADDRESS_PREFIX}absolute/${encoded}`
+}
+
+/** @returns whether the string is a supported preview mode. */
+export function isPreviewMode(value: unknown): value is PreviewMode {
+  return typeof value === 'string' && (PREVIEW_MODES as readonly string[]).includes(value)
+}
+
+/** @returns whether the string is a dsh priority band. */
+export function isPriorityBand(value: unknown): value is PriorityBand {
+  return typeof value === 'string' && (PRIORITY_BANDS as readonly string[]).includes(value)
+}
+
+/** Tab kinds this plugin owns; used to filter itself out of the switch list. */
+export const OWN_KINDS: readonly string[] = [VIEWER_KIND, NATIVE_KIND, UNSUPPORTED_KIND]
+
+/**
+ * Extensions the docu.md renderer can show, in the dot-less form dsh's
+ * document-preview registry expects (`md`, not `.md`).
+ */
+export function renderableExtensions(): string[] {
+  return [...MARKDOWN_EXTENSIONS, ...CODE_EXTENSIONS, ...DIAGRAM_EXTENSIONS]
+    .map((extension) => extension.replace(/^\./, ''))
 }
 
 /** Theme ids from the vendored `src/themes/registry.json` used for dsh light/dark. */
