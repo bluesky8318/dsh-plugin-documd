@@ -1,5 +1,9 @@
 ﻿# dsh-plugin-documd
 
+[![version](https://img.shields.io/badge/version-1.0.0-blue.svg)](CHANGELOG.md)
+[![dsh](https://img.shields.io/badge/dsh-0.2.1--rc.5-informational.svg)](README.md#版本兼容务必看)
+[![license](https://img.shields.io/badge/license-GPL--3.0--only-green.svg)](README.md#许可)
+
 在 DeepSeek Harness（dsh）**右侧栏**预览 Markdown、代码与图表：用 [docu.md](https://docu.md/) 的渲染引擎
 （`markdown-viewer` v6.0.0）渲染，文件内容由本插件宿主半边同源提供，viewer 运行在沙箱 iframe 里。
 
@@ -11,23 +15,22 @@ own host half. GPL-3.0-only, because the engine is GPL-3.0-only.
 
 | 项目 | 结论 |
 | --- | --- |
-| 宿主半边（HTTP + token + 路径约束） | ✅ 已跑通（73 条单测 + 0.1.5 真 `dsh web` HTTP 请求） |
-| workspace 路径解析（0.1.5 修复） | ✅ 已实测：session 地址（中文/空格）200、absolute 地址 200、workspace 外 403（详见下节） |
-| 滚动（0.1.6 修复） | ✅ dev harness 600px 容器实测：`#markdown-wrapper` 600/24422，滚到底可达，滚动行能回传 |
+| **1.0.0**（当前正式版） | ✅ GUI 全流程手点通过：安装、启动、打开预览、滚动、切换预览方式 |
+| 宿主半边（HTTP + token + 路径约束） | ✅ 73 条单测 + 真 `dsh web` HTTP 请求（200/403 有记录） |
+| workspace 路径解析（0.1.5 修复） | ✅ 已实测：session 地址（中文/空格）200、absolute 地址 200、workspace 外 403 |
+| 滚动（0.1.6 修复） | ✅ dev harness 600px 容器实测可滚到底、滚动行回传；GUI 手点确认长文档可滚 |
 | 打开耗时（0.1.6） | ✅ dev harness 实测：中等 md 首屏 2205.8 ms → 827 ms（其中渲染 1604.9 → 135 ms） |
 | viewer 静态产物 | ✅ 已构建并**提交**在 `assets/viewer/`（34 套主题、mermaid、KaTeX 字体、_locales） |
-| viewer 渲染 Markdown/代码/Mermaid/KaTeX/相对图片 | ✅ 裸浏览器实测通（截图见 [docs/dev-harness-render.png](docs/dev-harness-render.png)） |
-| 客户端 tab 注册（`sidebarRightTabs` + `sidebar.right.pane.tab`） | ⚠️ 类型检查 + 构建 + 纯函数单测通过；**仍需在真 dsh GUI 里点开文件确认** |
-| 降级链（PDF/图片内嵌、Office 卡片 + 其它 viewer 挂载点） | ✅ 代码就绪；同样只做过类型/构建验证 |
+| viewer 渲染 Markdown/代码/Mermaid/KaTeX/相对图片 | ✅ 裸浏览器 + GUI 实测通（截图见 [docs/dev-harness-render.png](docs/dev-harness-render.png)） |
+| 客户端 tab 注册（`sidebarRightTabs` + `sidebar.right.pane.tab`） | ✅ GUI 实测通过 |
+| 降级链（PDF/图片内嵌、Office 卡片 + 其它 viewer 挂载点） | ✅ GUI 实测通过 |
 | 安装时零构建（`pnpm add github:…#sha` 不跑脚本） | ✅ 实测：无任何安装期脚本，`lib/` 与 `assets/viewer/` 随包分发 |
 | host 半边在「无 node_modules 的本地 clone」下可 import | ✅ 实测：0.1.3 起所有运行时依赖已内联，`lib/index.js` 只剩 `node:*` import |
 | `github:` 安装（pnpm 会递归初始化 submodule） | ✅ 0.1.4 起仓库无 `.gitmodules`，安装不再触发上游引擎的 SSH submodule 拉取 |
 | dsh 0.2.1-rc.5 兼容闸门（`requirements`） | ✅ 实测：用 dsh 自带 `evaluatePluginCompatibility` + 真 CLI 判定通过 |
 
-> 诚实边界：0.1.5 已在真 `dsh web` 进程里用 HTTP 打通「真实 URI → 路径 → 读文件」整条链路，
-> 但「客户端 tab 在 GUI 里点开」仍需一次真机手点确认。等价性依据见
-> [docs/0.1.5-verification.md](docs/0.1.5-verification.md)。0.1.6 的修复在 dev harness 量化过，
-> 真会话里的长文档滚动位置记忆仍需手点复核。
+> 1.0.0 是在 GUI 里手点验收后发布的。仍然存在的边界（0.8 s 首屏、Office 降级卡、
+> 滚动位置记忆）见 [已知限制](#已知限制)。逐版本的演进见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 0.1.6 修了什么：打开慢 & 不能滚动
 
@@ -90,16 +93,17 @@ own host half. GPL-3.0-only, because the engine is GPL-3.0-only.
 
 ```sh
 # desktop profile（报错里出现的 profile 就走这个）
-dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v0.1.6
+dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v1.0.0
 
 # web profile 同理
-dsh plugin --profile web add github:bluesky8318/dsh-plugin-documd#v0.1.6
+dsh plugin --profile web add github:bluesky8318/dsh-plugin-documd#v1.0.0
 
 dsh                    # 起 GUI；默认 manual：在预览的“打开方式”里选 docu.md 才会用本插件
 ```
 
-`#v0.1.6` 是 tag，也可以钉提交：`github:bluesky8318/dsh-plugin-documd#<sha>`（
-v0.1.6 对应提交见仓库 Releases / `git rev-list -n1 v0.1.6`）。
+`#v1.0.0` 是 tag，也可以钉提交：`github:bluesky8318/dsh-plugin-documd#<sha>`（
+v1.0.0 对应提交见 [Releases](https://github.com/bluesky8318/dsh-plugin-documd/releases/tag/v1.0.0) 或
+`git rev-list -n1 v1.0.0`）。
 
 > **仓库里没有 git submodule（0.1.4 起）。** pnpm 装 git 依赖时会执行
 > `git submodule update --init --recursive`，而上游引擎自己的嵌套 submodule 用的是 SSH URL，
@@ -242,8 +246,7 @@ dsh 的 tab 竞争规则（来自 asar 内 `sidebar-right` 实现）：
 
 ```sh
 npm install
-git submodule update --init  # 上游引擎（.gitmodules 里钉死 SHA）
-npm run vendor:install       # 装上游依赖 + 打两处 dsh patch（已检出时不再下载）
+npm run vendor:install       # 仅重建 viewer 需要：按 SHA 下载上游引擎 + 装依赖 + 打两处 dsh patch
 npm run typecheck           # tsc --noEmit（src + tests）
 npm run test:unit           # vitest：契约解析 / workspace 约束 / token / 真 HTTP 路由
 npm run build:release       # tsdown → lib/（提交），并校验安装可用性与 assets/viewer/ 完整性
@@ -251,6 +254,26 @@ npm run check:packaging     # 只校验「安装时零构建」契约（无安�
 npm run build:viewer        # 重建 assets/viewer（约 23 MB，需要 vendor 与 esbuild）
 npm run build:viewer:check  # 只校验产物完整性，不重建
 ```
+
+### 发版流程（1.0.0 起的固定动作）
+
+1. **同步版本号**（三处，缺一处会失败）：`package.json`、`package-lock.json`（顶层与 `packages[""]`）、
+   `src/shared/contract.ts` 的 `ASSET_VERSION`。资产路径 `/docu-preview/viewer/<ASSET_VERSION>/`
+   与客户端 preload 都从它派生，`tests/assets.spec.ts` 会断言它与 `package.json` 一致。
+2. **四道门全绿**（任一失败就停）：
+   ```sh
+   npm run typecheck
+   npm run build            # 必须重建 lib/：ASSET_VERSION 会被编译进 lib/index.js / lib/client.js
+   npm run check:packaging  # 无安装期脚本 + lib/ 与 assets/viewer/ 齐全 + 无未内联裸依赖
+   npm run test:unit        # vitest 全量
+   ```
+3. 提交源码 **加上 `lib/` 与 `assets/viewer/` 构建产物**（「安装时零构建」依赖它们入库）。
+4. `git tag -a v<版本> -m "<一句话说明>"`（annotated；不要复用旧 tag）。
+5. `git push origin main --tags`。
+6. `gh release create v<版本> --title "…" --notes-file <notes>`（不传二进制），然后复核对齐：
+   远端 tag 的 commit、Release 页面、以及用该 tag 的 codeload tarball 确认
+   `lib/{index,client}.js`、`assets/viewer/{index.html,viewer.js,styles.css}` 都在且 `package.json`
+   无 `install`/`postinstall`。
 
 **裸浏览器验证 viewer**（不需要 dsh）：
 
@@ -399,9 +422,15 @@ dsh 安装插件时会读插件 `package.json` 的 **`peerDependencies`** 作为
 
 ## 已知限制
 
-- 0.1.5 已用真 `dsh web --no-open` + 真实 `dsh-resource://` URI 打通 HTTP 链路（200/403 有记录），
-  但**客户端 tab 的 GUI 点选仍未手点验证**；tab 命中依赖 `patterns`/`canOpen` 与官方
-  `documentpreview` 的地址格式一致，已按 npm 包 `.d.ts` 对齐。
+- **首屏约 0.8 s**（dev harness 实测中等 md：2205.8 ms → 827 ms，其中渲染段 1604.9 → 135 ms）。
+  剩下的约 650 ms 基本都花在解析 3.7 MB 的 `viewer.js` 上，是引擎单包体积决定的；再往下要么拆
+  bundle、要么跨 tab 复用 iframe（Chrome 里跨父级移动 iframe 会重载，1.0.0 未做）。
+- **`.docx/.xlsx/.pptx` 只给降级提示卡**，不渲染内容。Office 渲染需另装对应插件，卡片上的按钮会
+  通过 `candidates()` 自动发现它们并转交。
+- **peer 依赖由 dsh profile 提供**：`@deepseek-ai/cordis`（`~4.0.5`）与
+  `@deepseek-ai/dsh-tools`（`0.2.1-rc.5`）不内联，必须与宿主同一实例。装进 profile 时由 pnpm
+  解析；本地 clone / overlay（`--patch` 指 `file://`）下缺这两个包会 import 失败。
+- **滚动位置记忆只在同一次客户端会话内有效**：行号按地址记在内存，插件重载或 dsh 重启后不保留。
 - 默认 `mode: manual` 不抢 tab；如果期望「点文件就出 docu.md」，需要显式配置 `mode: auto`。
 - 官方 `documentPreviews` 入口只覆盖文本类（`loading: 'text-pages'`）；PDF/图片的内嵌仍由本插件
   native tab 提供，系统程序打开仍走 dsh 工具栏。

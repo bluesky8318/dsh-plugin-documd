@@ -20,10 +20,12 @@ Third-party notices
 docu.md / markdown-viewer
 -------------------------
 
-The rendering engine in `vendor/markdown-viewer/` (a git submodule: this repo's
-tree holds only a gitlink pinned by `.gitmodules`, so the upstream history and
-its license boundary stay intact) and the static viewer built from it into
-`assets/viewer/` come from
+The rendering engine is *not* vendored into this repository (0.1.4 removed the
+git submodule: pnpm would recursively initialize the upstream's SSH submodules
+and fail). `scripts/vendor-install.mjs` materializes it at the pinned commit
+below into `vendor/markdown-viewer/` (git-ignored) when a viewer rebuild is
+needed; the static viewer prebuilt from it is committed under `assets/viewer/`
+and is all that the plugin reads at runtime. Both come from
 
     markdown-viewer/markdown-viewer-extension
     https://github.com/markdown-viewer/markdown-viewer-extension

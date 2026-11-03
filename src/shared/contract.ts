@@ -26,7 +26,7 @@ export const VIEWER_PREFIX = `${ROUTE_PREFIX}/viewer`
  * with `immutable` cache headers, so a version bump is what invalidates the
  * 3.7 MB `viewer.js` instead of a revalidation on every tab open.
  */
-export const ASSET_VERSION = '0.1.6'
+export const ASSET_VERSION = '1.0.0'
 
 /** Absolute path of a versioned viewer asset, e.g. `index.html`. */
 export function viewerAssetPath(relative = 'index.html', version: string = ASSET_VERSION): string {

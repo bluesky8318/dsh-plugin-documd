@@ -6,7 +6,7 @@
 ## 快速开始
 
 ```bash
-dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v0.1.6
+dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v1.0.0
 dsh
 ```
 
