@@ -47,15 +47,36 @@
 <body data-state="boot">
   <header>
     <strong>dsh-plugin-documd</strong>
-    <code id="address">dsh-resource://file/session/dev/sample/demo.md</code>
+    <code id="address">dsh-resource://file/session/dev/sample/medium.md</code>
     <span class="badge" id="badge">booting…</span>
   </header>
   <div id="pane"></div>
 
   <script>
-    const ADDRESS = 'dsh-resource://file/session/dev/sample/demo.md';
+    // `?doc=sample/medium.md&h=600`: pick the document and pin the host pane to
+    // a fixed height so the scroll chain is exercised exactly like a sidebar tab.
+    const params = new URLSearchParams(location.search);
+    const DOC = params.get('doc') || 'sample/medium.md';
+    const HEIGHT = params.get('h');
+    // `?seq=1` reproduces the 0.1.5 ordering (read the file before creating
+    // the iframe) so before/after numbers can be compared on the same page.
+    const SEQ = params.get('seq') === '1';
+    const ADDRESS = `dsh-resource://file/session/dev/${DOC}`;
+
     const badge = document.getElementById('badge');
     const pane = document.getElementById('pane');
+    document.getElementById('address').textContent = ADDRESS;
+    if (HEIGHT) {
+      pane.style.flex = 'none';
+      pane.style.height = `${Number(HEIGHT)}px`;
+    }
+
+    const t0 = performance.now();
+    const timeline = { doc: DOC, height: HEIGHT ? Number(HEIGHT) : 'flex' };
+    window.__timeline = timeline;
+    const mark = (name) => {
+      timeline[name] = Math.round((performance.now() - t0) * 10) / 10;
+    };
 
     function setState(state, text) {
       document.body.dataset.state = state;
@@ -69,6 +90,56 @@
       return body;
     }
 
+    function transferSummary(frame) {
+      try {
+        const collect = (win) => {
+          const entries = win.performance.getEntriesByType('resource');
+          return {
+            count: entries.length,
+            transferBytes: entries.reduce((sum, entry) => sum + (entry.transferSize || 0), 0),
+            decodedBytes: entries.reduce((sum, entry) => sum + (entry.decodedBodySize || 0), 0),
+          };
+        };
+        const parent = collect(window);
+        let inner = { count: 0, transferBytes: 0, decodedBytes: 0 };
+        try {
+          inner = collect(frame.contentWindow);
+        } catch {}
+        return {
+          parent,
+          inner,
+          transferBytes: parent.transferBytes + inner.transferBytes,
+          decodedBytes: parent.decodedBytes + inner.decodedBytes,
+        };
+      } catch {
+        return null;
+      }
+    }
+
+    function sendReport() {
+      const payload = JSON.stringify({
+        timeline: window.__timeline,
+        scroll: window.__scroll,
+        scrollLine: document.body.dataset.scrollLine || null,
+        url: location.search,
+        state: document.body.dataset.state,
+      });
+      try {
+        // `sendBeacon` survives a tab losing focus mid-flight; plain fetch was
+        // getting ERR_ABORTED when the head tooling touched the page.
+        const blob = new Blob([payload], { type: 'application/json' });
+        if (navigator.sendBeacon?.('/__harness-report', blob)) return;
+      } catch {}
+      try {
+        fetch('/__harness-report', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: payload,
+          keepalive: true,
+        });
+      } catch {}
+    }
+
     async function main() {
       const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
@@ -78,20 +149,37 @@
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ address: ADDRESS, dark }),
       });
+      mark('session');
       document.body.dataset.category = session.category;
 
-      setState('reading', 'reading document…');
-      const file = await readJson(`/docu-preview/api/file?token=${encodeURIComponent(session.token)}`);
+      let file = null;
+      if (SEQ) {
+        setState('reading', 'reading document…');
+        file = await readJson(`/docu-preview/api/file?token=${encodeURIComponent(session.token)}`);
+        mark('file');
+      }
 
+      // Start the iframe as soon as the token exists; content is fetched in
+      // parallel (this mirrors the 0.1.6 client order).
       const frame = document.createElement('iframe');
       frame.className = 'frame';
       frame.title = session.filename;
-      frame.src = `/docu-preview/viewer/index.html?token=${encodeURIComponent(session.token)}&theme=${encodeURIComponent(session.themeId)}`;
+      const version = params.get('v');
+      const versionPath = version ? `${version}/` : '';
+      frame.src = `/docu-preview/viewer/${versionPath}index.html?token=${encodeURIComponent(session.token)}&theme=${encodeURIComponent(session.themeId)}`;
+      mark('iframe');
+
+      if (!SEQ) {
+        setState('reading', 'reading document…');
+        file = await readJson(`/docu-preview/api/file?token=${encodeURIComponent(session.token)}`);
+        mark('file');
+      }
 
       let delivered = false;
       function deliver() {
         if (delivered || !frame.contentWindow) return;
         delivered = true;
+        mark('deliver');
         const slash = session.path.lastIndexOf('/');
         frame.contentWindow.postMessage({
           type: 'OPEN_DOCUMENT',
@@ -106,11 +194,37 @@
         if (event.source !== frame.contentWindow) return;
         const message = event.data || {};
         if (message.type === 'VIEWER_READY') {
+          mark('ready');
           setState('ready', 'viewer ready');
           deliver();
         } else if (message.type === 'VIEWER_RENDERED') {
-          setState('rendered', `rendered ${message.filename}`);
+          mark('rendered');
+          timeline.total = timeline.rendered;
+          timeline.transfer = transferSummary(frame);
+          setState('rendered', `rendered in ${timeline.rendered} ms`);
           document.body.dataset.renderedFilename = String(message.filename || '');
+          // A hidden/未布局的标签页会给出 0 宽的视口，那时量到的换行与高度都不可信。
+          // 等真实布局出现（innerWidth > 0）再采样，最多等 ~3s。
+          const sample = (attempt) => {
+            let width = 0;
+            try {
+              width = frame.contentWindow.innerWidth;
+            } catch {}
+            if (width > 0 || attempt >= 20) {
+              timeline.layoutWidth = width;
+              try {
+                const win = frame.contentWindow;
+                timeline.viewer = win.__documdTiming || null;
+                timeline.assets = win.__documdAssets || null;
+              } catch {}
+              probeScroll();
+              // Give the viewer's scroll reporter a beat to emit its line.
+              setTimeout(sendReport, 400);
+              return;
+            }
+            setTimeout(() => sample(attempt + 1), 150);
+          };
+          setTimeout(() => sample(0), 150);
         } else if (message.type === 'VIEWER_ERROR') {
           setState('error', `error: ${message.message}`);
         } else if (message.type === 'VIEWER_SCROLL_LINE_CHANGED') {
@@ -122,8 +236,74 @@
         }
       });
 
-      frame.addEventListener('load', deliver);
+      frame.addEventListener('load', () => {
+        mark('iframeLoad');
+      });
       pane.appendChild(frame);
+    }
+
+    // Scroll-chain probe: the viewer must scroll *inside* the iframe, and the
+    // last block must be reachable. Values are exposed for the test runner.
+    function probeScroll() {
+      try {
+        const doc = document.querySelector('iframe').contentDocument;
+        const win = document.querySelector('iframe').contentWindow;
+        const wrapper = doc.getElementById('markdown-wrapper');
+        const content = doc.getElementById('markdown-content');
+        const scroller = wrapper || content;
+        const bodyStyle = win.getComputedStyle(doc.body);
+        const htmlStyle = win.getComputedStyle(doc.documentElement);
+        const before = scroller ? scroller.scrollTop : 0;
+        const maxScroll = scroller ? scroller.scrollHeight - scroller.clientHeight : 0;
+        if (scroller) scroller.scrollTop = scroller.scrollHeight;
+        const after = scroller ? scroller.scrollTop : 0;
+        window.__scroll = {
+          scroller: wrapper ? 'markdown-wrapper' : 'markdown-content',
+          clientHeight: scroller ? scroller.clientHeight : 0,
+          scrollHeight: scroller ? scroller.scrollHeight : 0,
+          maxScroll,
+          before,
+          after,
+          reachedBottom: maxScroll > 0 && Math.abs(after - maxScroll) <= 2,
+          bodyOverflow: bodyStyle.overflow,
+          htmlOverflow: htmlStyle.overflow,
+          // Layout shape of the inner document, to explain the scroll height.
+          dom: {
+            rootHeight: doc.getElementById('docu-preview-root')?.getBoundingClientRect().height || 0,
+            contentHeight: content?.getBoundingClientRect().height || 0,
+            contentWidth: content?.getBoundingClientRect().width || 0,
+            blocks: content?.querySelectorAll('*').length || 0,
+            fontSize: content ? win.getComputedStyle(content).fontSize : '',
+            bodyScrollHeight: doc.body.scrollHeight,
+            cssLoaded: doc.styleSheets.length,
+            windowWidth: win.innerWidth,
+            chain: (() => {
+              const out = [];
+              let node = content;
+              while (node && node !== doc.documentElement.nextElementSibling) {
+                const rect = node.getBoundingClientRect ? node.getBoundingClientRect() : { width: 0, height: 0 };
+                const style = win.getComputedStyle(node);
+                out.push({
+                  tag: node.tagName,
+                  id: node.id,
+                  cls: typeof node.className === 'string' ? node.className : '',
+                  w: Math.round(rect.width),
+                  h: Math.round(rect.height),
+                  width: style.width,
+                  display: style.display,
+                  position: style.position,
+                });
+                node = node.parentElement;
+              }
+              return out;
+            })(),
+          },
+        };
+        document.body.dataset.scrollable = window.__scroll.reachedBottom ? 'yes' : 'no';
+      } catch (error) {
+        window.__scroll = { error: String(error) };
+        document.body.dataset.scrollable = 'error';
+      }
     }
 
     main().catch((error) => setState('error', `error: ${error.message || error}`));

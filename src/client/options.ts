@@ -11,6 +11,7 @@
 
 import {
   API_PREFIX,
+  ASSET_VERSION,
   DEFAULT_PREVIEW_MODE,
   DEFAULT_PRIORITY,
   isPreviewMode,
@@ -24,6 +25,12 @@ export interface PreviewOptions {
   readonly mode: PreviewMode
   readonly priority: PriorityBand
   readonly rememberChoice: boolean
+  /**
+   * Version segment the viewer iframe is served under. The host serves that
+   * subtree with `immutable`, so the bundle is cached across tabs until the
+   * plugin version changes.
+   */
+  readonly assetVersion: string
 }
 
 /** What a fresh install does: available in `打开方式`, never claims a tab. */
@@ -31,6 +38,7 @@ export const FALLBACK_OPTIONS: PreviewOptions = {
   mode: DEFAULT_PREVIEW_MODE,
   priority: DEFAULT_PRIORITY,
   rememberChoice: true,
+  assetVersion: ASSET_VERSION,
 }
 
 /**
@@ -57,6 +65,9 @@ export async function loadPreviewOptions(
       rememberChoice: typeof body.rememberChoice === 'boolean'
         ? body.rememberChoice
         : FALLBACK_OPTIONS.rememberChoice,
+      assetVersion: typeof body.assetVersion === 'string' && /^\d+\.\d+\.\d+/.test(body.assetVersion)
+        ? body.assetVersion
+        : FALLBACK_OPTIONS.assetVersion,
     }
   } catch {
     return FALLBACK_OPTIONS

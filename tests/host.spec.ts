@@ -12,7 +12,7 @@ import {
   parseRange,
 } from '../src/host/paths.ts'
 import { TokenStore } from '../src/host/tokens.ts'
-import { formatFileAddress } from '../src/shared/contract.ts'
+import { ASSET_VERSION, formatFileAddress } from '../src/shared/contract.ts'
 
 let sandbox = ''
 let root = ''
@@ -219,6 +219,49 @@ describe('createRoutes over HTTP', () => {
     expect(await response.text()).toContain('<title>viewer</title>')
   })
 
+  it('serves the versioned viewer subtree with immutable caching + ETag', async () => {
+    const url = `${base}/docu-preview/viewer/${ASSET_VERSION}/index.html`
+    const response = await fetch(url)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toContain('immutable')
+    expect(response.headers.get('cache-control')).toContain('max-age=31536000')
+
+    const etag = response.headers.get('etag')
+    expect(etag).toBeTruthy()
+    const revalidated = await fetch(url, { headers: { 'if-none-match': etag ?? '' } })
+    expect(revalidated.status).toBe(304)
+    expect(revalidated.headers.get('etag')).toBe(etag)
+  })
+
+  it('treats a viewer path pinned to another version as stale', async () => {
+    const response = await fetch(`${base}/docu-preview/viewer/0.0.1/index.html`)
+    expect(response.status).toBe(404)
+    expect((await response.json() as { error: string }).error).toBe('stale_asset')
+  })
+
+  it('keeps the unversioned viewer index out of long-lived caches', async () => {
+    const response = await fetch(`${base}/docu-preview/viewer/index.html`)
+    expect(response.headers.get('cache-control')).toBe('no-cache')
+  })
+
+  it('reports the asset version to the client', async () => {
+    const response = await fetch(`${base}/docu-preview/api/options`)
+    const body = (await response.json()) as { assetVersion?: string }
+    expect(body.assetVersion).toBe(ASSET_VERSION)
+  })
+
+  it('keeps the last timing reports for diagnostics', async () => {
+    const response = await fetch(`${base}/docu-preview/api/metrics`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: base },
+      body: JSON.stringify({ kind: 'open', timeline: { total: 12.3 } }),
+    })
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { ok: boolean; kept: number }
+    expect(body.ok).toBe(true)
+    expect(body.kept).toBeGreaterThan(0)
+  })
+
   it('does not serve an encoded path that escapes the viewer root', async () => {
     const response = await fetch(`${base}/docu-preview/viewer/%2e%2e%2f%2e%2e%2fpackage.json`)
     expect(response.status).toBe(404)
@@ -306,7 +349,12 @@ describe('createRoutes over HTTP', () => {
   it('reports the options the client registers with', async () => {
     const response = await fetch(`${base}/docu-preview/api/options`)
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ mode: 'manual', priority: 'builtin', rememberChoice: true })
+    expect(await response.json()).toEqual({
+      mode: 'manual',
+      priority: 'builtin',
+      rememberChoice: true,
+      assetVersion: ASSET_VERSION,
+    })
   })
 
   it('exposes the resolve chain for the real address shape', async () => {

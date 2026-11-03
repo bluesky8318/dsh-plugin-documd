@@ -46,6 +46,14 @@ const STORAGE_PREFIX = 'dsh-documd:';
 /** Reasonable default while no host token has been set (dev/bare-page usage). */
 const NO_TOKEN = '';
 
+/** Asset fetch durations (ms) — surfaced as `globalThis.__documdAssets`. */
+const assetTimings: Record<string, number> = {};
+
+function recordAssetTiming(path: string, startedAt: number): void {
+  assetTimings[path] = Math.round((performance.now() - startedAt) * 10) / 10;
+  (globalThis as unknown as Record<string, unknown>).__documdAssets = assetTimings;
+}
+
 function postToParent(message: unknown): void {
   if (window.parent && window.parent !== window) {
     window.parent.postMessage(message, window.location.origin);
@@ -234,9 +242,19 @@ class DshResourceService implements ResourceService {
     const cached = this.textCache.get(path);
     if (cached) return cached;
 
-    const request = fetch(this.getURL(path), { cache: 'no-cache' }).then((response) => {
+    // `no-cache` forced a revalidation for every asset on every open, which
+    // showed up as extra round trips in the boot timings. The host serves the
+    // versioned viewer tree with `immutable`, so the normal cache mode is safe.
+    const started = performance.now();
+    const request = fetch(this.getURL(path), { cache: 'default' }).then((response) => {
       if (!response.ok) throw new Error(`HTTP ${response.status}: ${path}`);
       return response.text();
+    }).then((text) => {
+      recordAssetTiming(path, started);
+      return text;
+    }, (error: unknown) => {
+      recordAssetTiming(path, started);
+      throw error;
     });
     this.textCache.set(path, request);
     request.catch(() => this.textCache.delete(path));

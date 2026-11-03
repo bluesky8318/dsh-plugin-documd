@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-documd",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Right-sidebar file preview for DeepSeek Harness (dsh), rendering Markdown and code with the docu.md engine inside a sandboxed iframe.",
   "keywords": [
     "deepseek-harness",

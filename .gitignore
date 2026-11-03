@@ -2,6 +2,9 @@ node_modules/
 *.log
 .DS_Store
 
+# Dev-harness measurement output (`POST /__harness-report`).
+dev/.report.json
+
 # `lib/` and `assets/viewer/` ARE committed on purpose: installing from
 # `github:` / codeload has no permission to run build scripts, so the package
 # must be runnable straight out of the tarball (see "安装时零构建" in README).

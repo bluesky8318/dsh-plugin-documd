@@ -174,17 +174,38 @@ function writeViewerHtml() {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>docu.md preview</title>
   <link rel="stylesheet" href="styles.css">
+  <!-- The element runtime's first-reveal gate polls for a tag with this id
+       (the Chrome-extension host injects it; this host links the full
+       stylesheet instead). Without the placeholder every first render waits
+       out the gate's 1500 ms deadline before painting. -->
+  <style id="mv-content-styles"></style>
   <style>
     html, body { height: 100%; margin: 0; padding: 0; }
     body {
+      overflow: hidden;
       background: var(--md-page-bg, var(--color-bg-surface, #ffffff));
       font-family: var(--ds-font-family, system-ui, -apple-system, "Segoe UI", sans-serif);
+    }
+    /* The engine scrolls the element returned by \`target.closest('#markdown-wrapper')\`
+       (vendor .../integration/element.ts). Without that wrapper the viewer falls
+       back to #markdown-content, which has neither a height nor an overflow, so
+       body's overflow:hidden silently clipped every document longer than the
+       panel — no scrollbar at all. Keep this wrapper: it is the scroll container,
+       and the host restores scroll positions through it. */
+    #markdown-wrapper {
+      margin: 0 !important;
+      height: 100%;
+      overflow-y: auto;
+      overflow-x: hidden;
+      overscroll-behavior: contain;
     }
     #docu-preview-root { min-height: 100%; }
   </style>
 </head>
 <body class="mv-panel">
-  <div id="docu-preview-root" mode="inline"></div>
+  <div id="markdown-wrapper">
+    <div id="docu-preview-root" mode="inline"></div>
+  </div>
   <script src="viewer.js"></script>
 </body>
 </html>`;

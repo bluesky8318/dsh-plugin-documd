@@ -141,6 +141,7 @@ export function registerTabs(ctx: Context, options: PreviewOptions): void {
     alternatives,
     openWithKind,
     rememberChoice: options.rememberChoice,
+    assetVersion: options.assetVersion,
   }
   setDocumentActions(injected)
 

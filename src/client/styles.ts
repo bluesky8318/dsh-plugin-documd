@@ -14,10 +14,14 @@ const CSS = `
 .dm-pane {
   display: flex;
   flex-direction: column;
+  position: relative;
   width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
+  /* The iframe scrolls internally; this pane must never become a second
+     scroll container, and must not clip the frame's own scrollbar. */
+  overflow: hidden;
   background: var(--dsw-alias-bg-base, #ffffff);
   color: var(--dsw-alias-label-primary, #1f2023);
   font-family: inherit;
@@ -63,11 +67,22 @@ const CSS = `
 }
 .dm-switch-reset:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06)); }
 .dm-frame {
-  flex: 1;
+  display: block;
+  flex: 1 1 auto;
   width: 100%;
   height: 100%;
+  min-width: 0;
   min-height: 0;
   border: 0;
+  background: var(--dsw-alias-bg-base, #ffffff);
+}
+/* Shown while the frame boots but the document text is still being read. */
+.dm-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: var(--dsw-alias-bg-base, #ffffff);
 }
 .dm-status {

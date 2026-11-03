@@ -23,8 +23,34 @@ import {
 import { buildCodeReadingRender } from '../../../vendor/markdown-viewer/src/utils/code-preview';
 import { wrapFileContent } from '../../../vendor/markdown-viewer/src/utils/file-wrapper';
 import themeManager from '../../../vendor/markdown-viewer/src/utils/theme-manager';
+import { loadAndApplyTheme } from '../../../vendor/markdown-viewer/src/utils/theme-to-css';
 
-const ROOT_ID = 'docu-preview-root';
+const ROOT_ID = 'docu-preview-root'
+
+/**
+ * Per-iframe phase timings, relative to this script starting to evaluate.
+ *
+ * They are attached to VIEWER_READY / VIEWER_RENDERED so the host can show
+ * "boot vs render" without a profiler, and land on
+ * `window.__documdTiming` for the dev harness. Numbers are milliseconds.
+ */
+const timing: Record<string, number> = {}
+const bootAt = performance.now()
+
+function round(value: number): number {
+  return Math.round(value * 10) / 10
+}
+
+/** Record a phase that started at `from` and finished now; returns `now`. */
+function lap(name: string, from: number): number {
+  const now = performance.now()
+  timing[name] = round(now - from)
+  return now
+}
+
+function timingSnapshot(): Record<string, number> {
+  return { ...timing, total: round(performance.now() - bootAt) }
+}
 
 type IncomingMessage = {
   type?: string;
@@ -76,14 +102,25 @@ async function ensureController(): Promise<MarkdownViewerElementRuntimeControlle
       // The platform must be initialized first: the shared localization and
       // theme managers read settings/storage through it synchronously during
       // their own init.
+      let at = performance.now();
       await dshPlatform.init();
-      if (INITIAL_THEME) {
-        await themeManager.saveSelectedTheme(INITIAL_THEME);
-      }
+      at = lap('platform.init', at);
+      // Always apply a theme: the style gate below needs `#theme-dynamic-style`
+      // to exist, and the theme CSS is what makes the first paint themed.
+      const themeId = INITIAL_THEME || 'vscode';
+      if (INITIAL_THEME) await themeManager.saveSelectedTheme(INITIAL_THEME);
+      // `element.ts` gates its first reveal on `#theme-dynamic-style` and
+      // `#mv-content-styles` existing, polling every 16 ms up to a 1500 ms
+      // deadline. Without this call the gate can never see the theme tag and
+      // every first render pays the full deadline (~1.6 s) before painting.
+      await loadAndApplyTheme(themeId);
+      at = lap('theme.apply', at);
       const options = await initializeViewerCore(dshPlatform);
+      at = lap('core.init', at);
       const root = document.getElementById(ROOT_ID);
       if (!root) throw new Error(`dsh viewer: #${ROOT_ID} is missing from index.html`);
       controller = attachMarkdownViewerElementRuntime(root, options);
+      lap('attach', at);
       root.addEventListener('scrolllinechange', (event) => {
         const line = (event as CustomEvent<{ line?: number }>).detail?.line;
         if (typeof line === 'number' && Number.isFinite(line)) {
@@ -91,6 +128,7 @@ async function ensureController(): Promise<MarkdownViewerElementRuntimeControlle
         }
       });
       document.documentElement.dataset.viewerReady = '1';
+      timing.boot = round(performance.now() - bootAt);
       return controller;
     })().catch((error: unknown) => {
       // A failed boot must be retryable: the next document gets a fresh attempt.
@@ -118,15 +156,22 @@ async function openDocument(message: IncomingMessage): Promise<void> {
   dshPlatform.document.setDocumentPath(documentPath);
 
   const viewer = await ensureController();
-  await viewer.render(prepareContent(message.content ?? '', filename));
+  let at = performance.now();
+  const rendered = prepareContent(message.content ?? '', filename);
+  at = lap('content.prepare', at);
+  await viewer.render(rendered);
+  at = lap('render', at);
 
   if (typeof message.targetLine === 'number' && Number.isFinite(message.targetLine)) {
     viewer.setScrollLine(message.targetLine);
   } else {
     viewer.setScrollLine(1);
   }
+  lap('scrollline', at);
 
-  post('VIEWER_RENDERED', { filename, documentKey: documentPath });
+  timing.document = round(performance.now() - bootAt);
+  (window as unknown as { __documdTiming?: Record<string, number> }).__documdTiming = timingSnapshot();
+  post('VIEWER_RENDERED', { filename, documentKey: documentPath, timing: timingSnapshot() });
 }
 
 async function updateContent(message: IncomingMessage): Promise<void> {
@@ -245,7 +290,10 @@ document.addEventListener('click', handleDocumentClick);
 // The host waits for this before handing over the first document, so it is
 // posted as soon as the listener exists — and again on a later DOMContentLoaded
 // in case the iframe script ran before the message listener was attached.
-post('VIEWER_READY');
+function postReady(): void {
+  post('VIEWER_READY', { timing: timingSnapshot() });
+}
+postReady();
 if (document.readyState === 'loading') {
-  window.addEventListener('DOMContentLoaded', () => post('VIEWER_READY'), { once: true });
+  window.addEventListener('DOMContentLoaded', postReady, { once: true });
 }

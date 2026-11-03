@@ -11,8 +11,10 @@ own host half. GPL-3.0-only, because the engine is GPL-3.0-only.
 
 | 项目 | 结论 |
 | --- | --- |
-| 宿主半边（HTTP + token + 路径约束） | ✅ 已跑通（63 条单测 + 0.1.5 真 `dsh web` HTTP 请求） |
+| 宿主半边（HTTP + token + 路径约束） | ✅ 已跑通（73 条单测 + 0.1.5 真 `dsh web` HTTP 请求） |
 | workspace 路径解析（0.1.5 修复） | ✅ 已实测：session 地址（中文/空格）200、absolute 地址 200、workspace 外 403（详见下节） |
+| 滚动（0.1.6 修复） | ✅ dev harness 600px 容器实测：`#markdown-wrapper` 600/24422，滚到底可达，滚动行能回传 |
+| 打开耗时（0.1.6） | ✅ dev harness 实测：中等 md 首屏 2205.8 ms → 827 ms（其中渲染 1604.9 → 135 ms） |
 | viewer 静态产物 | ✅ 已构建并**提交**在 `assets/viewer/`（34 套主题、mermaid、KaTeX 字体、_locales） |
 | viewer 渲染 Markdown/代码/Mermaid/KaTeX/相对图片 | ✅ 裸浏览器实测通（截图见 [docs/dev-harness-render.png](docs/dev-harness-render.png)） |
 | 客户端 tab 注册（`sidebarRightTabs` + `sidebar.right.pane.tab`） | ⚠️ 类型检查 + 构建 + 纯函数单测通过；**仍需在真 dsh GUI 里点开文件确认** |
@@ -24,7 +26,35 @@ own host half. GPL-3.0-only, because the engine is GPL-3.0-only.
 
 > 诚实边界：0.1.5 已在真 `dsh web` 进程里用 HTTP 打通「真实 URI → 路径 → 读文件」整条链路，
 > 但「客户端 tab 在 GUI 里点开」仍需一次真机手点确认。等价性依据见
-> [docs/0.1.5-verification.md](docs/0.1.5-verification.md)。
+> [docs/0.1.5-verification.md](docs/0.1.5-verification.md)。0.1.6 的修复在 dev harness 量化过，
+> 真会话里的长文档滚动位置记忆仍需手点复核。
+
+## 0.1.6 修了什么：打开慢 & 不能滚动
+
+**不能滚动**：引擎自己滚的是 `#markdown-wrapper`（`element.ts` 里
+`target.closest('#markdown-wrapper')`），而 0.1.5 的 iframe 文档只有 `#docu-preview-root`，
+引擎只好退到 `#markdown-content`——它没有高度也没有 `overflow`，于是 `body` 的
+`overflow: hidden` 把超出一屏的内容全部裁掉，滚动条自然不存在。
+0.1.6 在 iframe 文档里补回 `#markdown-wrapper`（`height:100%; overflow-y:auto; margin:0`），
+让滚动发生在 iframe 内；宿主侧 `.dm-pane` 为 `overflow:hidden`、`.dm-frame` 为
+`flex:1 1 auto; min-height:0; height:100%`，保证 frame 能被压缩、不会被裁。
+
+**打开慢**：两处放大点，都是实测出来的。
+
+1. **1.5 s 空白等待**：`element.ts` 首次显示前会轮询等 `#mv-content-styles` 与
+   `#theme-dynamic-style` 出现，上限 1500 ms。Chrome 扩展宿主会自己注入这两个标签，
+   本插件直接 `<link>` 整份 `styles.css`，两个标签永远不出现 → 每次首屏都白等满 1500 ms。
+   0.1.6 在 boot 阶段就 `loadAndApplyTheme()`（顺带写出 `#theme-dynamic-style`），并在
+   `index.html` 里放一个空的 `<style id="mv-content-styles">` 占位。渲染 1604.9 → 135 ms。
+2. **资产每次重下**：静态资源原来是 `max-age=300` 且 `resource.fetch` 用
+   `cache: 'no-cache'`，每次开 tab 都要重新校验/下载 3.7 MB 的 `viewer.js`。
+   0.1.6 引入版本化路径 `/docu-preview/viewer/<版本>/…`（该子树 `immutable` 长缓存 + `ETag`/`304`），
+   客户端改为**先拿到 token 就建 iframe**、正文并行读取，并在插件激活时 preload
+   `viewer.js`/`styles.css`。实测同一份文档第二次打开：viewer 资源网络字节 **0**。
+
+`debug: true` 时 `GET /docu-preview/api/diagnostics?address=…` 会带上
+`metrics`（每次打开的分段耗时），客户端每渲染完成一次就 `POST /docu-preview/api/metrics`。
+
 
 ## 0.1.5 修了什么：`no such file in the workspace`
 
@@ -60,16 +90,16 @@ own host half. GPL-3.0-only, because the engine is GPL-3.0-only.
 
 ```sh
 # desktop profile（报错里出现的 profile 就走这个）
-dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v0.1.5
+dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v0.1.6
 
 # web profile 同理
-dsh plugin --profile web add github:bluesky8318/dsh-plugin-documd#v0.1.5
+dsh plugin --profile web add github:bluesky8318/dsh-plugin-documd#v0.1.6
 
 dsh                    # 起 GUI；默认 manual：在预览的“打开方式”里选 docu.md 才会用本插件
 ```
 
-`#v0.1.5` 是 tag，也可以钉提交：`github:bluesky8318/dsh-plugin-documd#<sha>`（
-v0.1.5 对应提交见仓库 Releases / `git rev-list -n1 v0.1.5`）。
+`#v0.1.6` 是 tag，也可以钉提交：`github:bluesky8318/dsh-plugin-documd#<sha>`（
+v0.1.6 对应提交见仓库 Releases / `git rev-list -n1 v0.1.6`）。
 
 > **仓库里没有 git submodule（0.1.4 起）。** pnpm 装 git 依赖时会执行
 > `git submodule update --init --recursive`，而上游引擎自己的嵌套 submodule 用的是 SSH URL，

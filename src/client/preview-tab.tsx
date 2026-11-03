@@ -21,6 +21,7 @@ import type {
   DocumentPreviewProps,
 } from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
 import {
+  API_PREFIX,
   VIEWER_KIND,
   VIEWER_PREFIX,
   formatFileAddress,
@@ -58,6 +59,8 @@ export interface PreviewTabInjected {
   readonly openWithKind: (address: string, kind: string, tabId?: string) => void
   /** Whether the choice is remembered per extension. */
   readonly rememberChoice: boolean
+  /** Version segment the viewer bundle is served under (`immutable` cache). */
+  readonly assetVersion: string
 }
 
 /** Extra props used when the same body runs inside dsh's document tab. */
@@ -79,12 +82,54 @@ export type PreviewTabProps =
 
 type LoadState =
   | { readonly kind: 'loading' }
+  /** Token issued: the viewer iframe is already booting while the text loads. */
+  | { readonly kind: 'opening'; readonly session: SessionResponse }
   | {
     readonly kind: 'ready'
     readonly session: SessionResponse
     readonly content: string
   }
   | { readonly kind: 'error'; readonly message: string }
+
+/** Timings for one open, reported to `POST /api/metrics` (debug diagnostics). */
+interface OpenTiming {
+  readonly started: number
+  readonly marks: Record<string, number>
+  viewer?: Readonly<Record<string, number>>
+}
+
+function nowMs(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now()
+}
+
+function roundMs(value: number): number {
+  return Math.round(value * 10) / 10
+}
+
+/**
+ * Report one open's phase timings to the host.
+ *
+ * The host keeps them in memory and echoes them from `/api/diagnostics` while
+ * `debug: true`; this is a diagnostics channel, so failures are ignored.
+ */
+function reportTiming(address: string, timing: OpenTiming | null): void {
+  if (!timing) return
+  try {
+    void fetch(`${API_PREFIX}/metrics`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({
+        kind: 'open',
+        address,
+        timeline: { ...timing.marks, total: roundMs(nowMs() - timing.started) },
+        viewer: timing.viewer,
+      }),
+    }).catch(() => {})
+  } catch {
+    // Telemetry must never affect the preview.
+  }
+}
 
 /** Props dsh's document tab hands to a `text-pages` implementation. */
 export type DocumdDocumentBodyProps =
@@ -113,6 +158,7 @@ export function PreviewTab(props: PreviewTabProps): ReactElement {
     alternatives,
     openWithKind,
     rememberChoice,
+    assetVersion,
     suppliedContent,
     addressOverride,
     showSwitcher = true,
@@ -123,6 +169,7 @@ export function PreviewTab(props: PreviewTabProps): ReactElement {
   const stateRef = useRef<LoadState>({ kind: 'loading' })
   const deliveredRef = useRef('')
   const preferenceApplied = useRef(false)
+  const timingRef = useRef<OpenTiming | null>(null)
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [attempt, setAttempt] = useState(0)
   const [, setResetTick] = useState(0)
@@ -162,8 +209,15 @@ export function PreviewTab(props: PreviewTabProps): ReactElement {
     deliveredRef.current = ''
     setState({ kind: 'loading' })
 
+    const timing: OpenTiming = { started: nowMs(), marks: {} }
+    timingRef.current = timing
+    const lap = (name: string): void => {
+      timing.marks[name] = roundMs(nowMs() - timing.started)
+    }
+
     void (async () => {
       const session = await createSession(address, detectDarkAppearance(), controller.signal)
+      lap('session')
       if (!live) {
         revokeSession(session.token)
         return
@@ -172,7 +226,15 @@ export function PreviewTab(props: PreviewTabProps): ReactElement {
       if (session.category !== 'viewer') {
         throw new Error(`the host classified this file as ${session.category}`)
       }
+
+      // Mount the iframe as soon as the token exists: its ~0.6–0.9s boot then
+      // overlaps the document read instead of following it. The frame is handed
+      // the text through `deliver()` once VIEWER_READY and the content are both
+      // in, whichever arrives last.
+      setState({ kind: 'opening', session })
+
       const content = suppliedContent ?? (await readDocument(session.token, controller.signal)).content
+      lap('content')
       if (!live) return
       setState({ kind: 'ready', session, content })
     })().catch((error: unknown) => {
@@ -194,6 +256,9 @@ export function PreviewTab(props: PreviewTabProps): ReactElement {
     if (current.kind !== 'ready' || !frame) return
     if (deliveredRef.current === current.session.token) return
     deliveredRef.current = current.session.token
+    if (timingRef.current) {
+      timingRef.current.marks.deliver = roundMs(nowMs() - timingRef.current.started)
+    }
 
     const path = current.session.path
     const slash = path.lastIndexOf('/')
@@ -217,9 +282,22 @@ export function PreviewTab(props: PreviewTabProps): ReactElement {
 
       switch (message.type) {
         case 'VIEWER_READY':
+          if (timingRef.current) {
+            timingRef.current.marks.ready = roundMs(nowMs() - timingRef.current.started)
+            if (message.timing) timingRef.current.viewer = message.timing
+          }
           deliverRef.current()
           break
-        case 'VIEWER_RENDERED':
+        case 'VIEWER_RENDERED': {
+          const timing = timingRef.current
+          if (timing) {
+            timing.marks.rendered = roundMs(nowMs() - timing.started)
+            if (message.timing) timing.viewer = message.timing
+          }
+          reportTiming(address, timing)
+          timingRef.current = null
+          break
+        }
         case 'EXPORT_RESULT':
           break
         case 'VIEWER_SCROLL_LINE_CHANGED':
@@ -279,6 +357,10 @@ export function PreviewTab(props: PreviewTabProps): ReactElement {
     )
   }
 
+  // `opening` and `ready` both have a session: the frame mounts as soon as the
+  // token exists, and the document is pushed in when it arrives.
+  const session = state.session
+  const waiting = state.kind === 'opening'
   const choices = showSwitcher ? alternatives(address) : []
 
   return (
@@ -324,14 +406,21 @@ export function PreviewTab(props: PreviewTabProps): ReactElement {
       )}
       <iframe
         ref={frameRef}
-        key={state.session.token}
+        key={session.token}
         className="dm-frame"
-        title={state.session.filename}
-        src={`${VIEWER_PREFIX}/index.html?token=${encodeURIComponent(state.session.token)}&theme=${encodeURIComponent(state.session.themeId)}`}
+        title={session.filename}
+        src={`${VIEWER_PREFIX}/${assetVersion}/index.html?token=${encodeURIComponent(session.token)}&theme=${encodeURIComponent(session.themeId)}`}
         onLoad={() => {
+          const timing = timingRef.current
+          if (timing) timing.marks.iframeLoad = roundMs(nowMs() - timing.started)
           deliverRef.current()
         }}
       />
+      {waiting && (
+        <div className="dm-overlay">
+          <LoadingPane label={t('viewer.loading')} />
+        </div>
+      )}
     </div>
   )
 }

@@ -25,6 +25,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import * as path from 'node:path'
 import {
   API_PREFIX,
+  ASSET_VERSION,
   VIEWER_PREFIX,
   classifyPath,
   parseFileAddress,
@@ -132,9 +133,34 @@ export function createRoutes(options: RoutesOptions): {
   const tokens = new TokenStore()
   const paths = new WorkspacePaths(options.workspaceRoot, options.rootForSession)
 
-  async function serveViewerAsset(relative: string, res: ServerResponse): Promise<void> {
-    const requested = relative || 'index.html'
+  /**
+   * Ring buffer of the client/viewer timing reports (`POST /api/metrics`).
+   *
+   * Surfaced through `/api/diagnostics` while `debug: true` so a slow tab can
+   * be reported with numbers instead of "feels slow".
+   */
+  const metrics: Array<Record<string, unknown>> = []
+  const METRICS_KEEP = 8
+
+  async function serveViewerAsset(
+    relative: string,
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
+    let requested = relative || 'index.html'
     if (requested.includes('\0')) return sendError(res, 400, 'bad_path', 'invalid asset path')
+
+    // Versioned subtree: `/viewer/<ASSET_VERSION>/...` is immutable, and a
+    // request for another version is a stale URL rather than a file.
+    let versioned = false
+    const versionMatch = /^([^/]+)\/(.*)$/.exec(requested)
+    if (versionMatch && /^\d+\.\d+\.\d+/.test(versionMatch[1] ?? '')) {
+      if (versionMatch[1] !== ASSET_VERSION) {
+        return sendError(res, 404, 'stale_asset', `viewer ${versionMatch[1]} is not this build`)
+      }
+      versioned = true
+      requested = versionMatch[2] || 'index.html'
+    }
 
     const normalized = path.posix.normalize(requested.replace(/\\/g, '/'))
     if (normalized.startsWith('..') || path.posix.isAbsolute(normalized)) {
@@ -156,10 +182,24 @@ export function createRoutes(options: RoutesOptions): {
     }
     if (!stat.isFile()) return sendError(res, 404, 'not_found', 'asset not found')
 
+    const etag = `"${stat.size.toString(16)}-${Math.round(stat.mtimeMs).toString(16)}"`
+    const cacheControl = versioned
+      ? 'public, max-age=31536000, immutable'
+      : normalized === 'index.html'
+        ? 'no-cache'
+        : 'public, max-age=300'
+
+    if (req.headers['if-none-match'] === etag) {
+      res.writeHead(304, { etag, 'cache-control': cacheControl, 'x-content-type-options': 'nosniff' })
+      res.end()
+      return
+    }
+
     res.writeHead(200, {
       'content-type': mimeFor(target),
       'content-length': stat.size,
-      'cache-control': normalized === 'index.html' ? 'no-cache' : 'public, max-age=300',
+      etag,
+      'cache-control': cacheControl,
       'x-content-type-options': 'nosniff',
     })
     createReadStream(target).pipe(res)
@@ -355,6 +395,7 @@ export function createRoutes(options: RoutesOptions): {
       mode: options.mode(),
       priority: options.priority(),
       rememberChoice: options.rememberChoice(),
+      assetVersion: ASSET_VERSION,
     })
   }
 
@@ -397,7 +438,29 @@ export function createRoutes(options: RoutesOptions): {
       roots: paths.roots(sessionId),
       trace,
       realPath,
+      assetVersion: ASSET_VERSION,
+      metrics,
     })
+  }
+
+  /** `POST /api/metrics` — open-per-tab timings, kept in memory while debugging. */
+  async function handleMetrics(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (req.method !== 'POST') return sendError(res, 405, 'method_not_allowed', 'use POST')
+    if (!sameOrigin(req)) return sendError(res, 403, 'bad_origin', 'metrics must come from the app origin')
+
+    let body: unknown
+    try {
+      body = await readJsonBody(req)
+    } catch {
+      return sendError(res, 400, 'bad_json', 'metrics body must be JSON')
+    }
+    if (!body || typeof body !== 'object') {
+      return sendError(res, 400, 'bad_json', 'metrics body must be a JSON object')
+    }
+
+    metrics.push({ receivedAt: Date.now(), ...(body as Record<string, unknown>) })
+    while (metrics.length > METRICS_KEEP) metrics.shift()
+    sendJson(res, 200, { ok: true, kept: metrics.length, debug: options.debug() })
   }
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -406,13 +469,16 @@ export function createRoutes(options: RoutesOptions): {
     const pathname = parsed.pathname
 
     if (pathname.startsWith(`${VIEWER_PREFIX}/`)) {
-      return serveViewerAsset(pathname.slice(`${VIEWER_PREFIX}/`.length), res)
+      return serveViewerAsset(pathname.slice(`${VIEWER_PREFIX}/`.length), req, res)
     }
     if (pathname === VIEWER_PREFIX) {
-      return serveViewerAsset('index.html', res)
+      return serveViewerAsset('index.html', req, res)
     }
     if (pathname === `${API_PREFIX}/session`) {
       return handleSession(req, res)
+    }
+    if (pathname === `${API_PREFIX}/metrics`) {
+      return handleMetrics(req, res)
     }
     if (pathname === `${API_PREFIX}/options`) {
       if (req.method !== 'GET') return sendError(res, 405, 'method_not_allowed', 'use GET')

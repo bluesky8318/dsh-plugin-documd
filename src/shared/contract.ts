@@ -18,6 +18,21 @@ export const ROUTE_PREFIX = '/docu-preview'
 /** Static viewer root: `GET /docu-preview/viewer/index.html`. */
 export const VIEWER_PREFIX = `${ROUTE_PREFIX}/viewer`
 
+/**
+ * Cache-busting segment for the viewer bundle.
+ *
+ * Must equal `package.json`'s version (a unit test pins it): the client loads
+ * `/docu-preview/viewer/<ASSET_VERSION>/index.html`, and that subtree is served
+ * with `immutable` cache headers, so a version bump is what invalidates the
+ * 3.7 MB `viewer.js` instead of a revalidation on every tab open.
+ */
+export const ASSET_VERSION = '0.1.6'
+
+/** Absolute path of a versioned viewer asset, e.g. `index.html`. */
+export function viewerAssetPath(relative = 'index.html', version: string = ASSET_VERSION): string {
+  return `${VIEWER_PREFIX}/${version}/${relative}`
+}
+
 /** JSON/binary API root. */
 export const API_PREFIX = `${ROUTE_PREFIX}/api`
 

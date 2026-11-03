@@ -9,10 +9,18 @@
  * @module dsh-plugin-documd/client/iframe-bridge
  */
 
+/** Per-phase timings the viewer reports (milliseconds). */
+export type ViewerTiming = Readonly<Record<string, number>>
+
 /** Messages the viewer sends to its embedding tab. */
 export type ViewerToHostMessage =
-  | { readonly type: 'VIEWER_READY' }
-  | { readonly type: 'VIEWER_RENDERED'; readonly filename?: string; readonly documentKey?: string }
+  | { readonly type: 'VIEWER_READY'; readonly timing?: ViewerTiming }
+  | {
+    readonly type: 'VIEWER_RENDERED'
+    readonly filename?: string
+    readonly documentKey?: string
+    readonly timing?: ViewerTiming
+  }
   | { readonly type: 'VIEWER_SCROLL_LINE_CHANGED'; readonly line: number }
   | { readonly type: 'WORKSPACE_NAVIGATE'; readonly path: string; readonly fragment?: string }
   | { readonly type: 'OPEN_URL'; readonly url: string }

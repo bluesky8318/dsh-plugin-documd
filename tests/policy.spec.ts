@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ASSET_VERSION,
   NATIVE_KIND,
   UNSUPPORTED_KIND,
   VIEWER_KIND,
@@ -69,6 +70,7 @@ describe('loadPreviewOptions', () => {
       mode: 'auto',
       priority: 'extension',
       rememberChoice: false,
+      assetVersion: ASSET_VERSION,
     })
   })
 
