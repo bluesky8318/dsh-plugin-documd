@@ -1,6 +1,6 @@
-﻿# dsh-plugin-documd
+# dsh-plugin-documd
 
-[![version](https://img.shields.io/badge/version-1.0.0-blue.svg)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-1.0.1-blue.svg)](CHANGELOG.md)
 [![dsh](https://img.shields.io/badge/dsh-0.2.1--rc.5-informational.svg)](README.md#版本兼容务必看)
 [![license](https://img.shields.io/badge/license-GPL--3.0--only-green.svg)](README.md#许可)
 
@@ -15,7 +15,8 @@ own host half. GPL-3.0-only, because the engine is GPL-3.0-only.
 
 | 项目 | 结论 |
 | --- | --- |
-| **1.0.0**（当前正式版） | ✅ GUI 全流程手点通过：安装、启动、打开预览、滚动、切换预览方式 |
+| **1.0.1**（当前正式版） | ✅ 修复 better-sidebar editor 档位压制（详见 CHANGELOG）；GUI 双向实测：md → documd viewer、其它格式仍归 editor |
+| 1.0.0 | ✅ GUI 全流程手点通过：安装、启动、打开预览、滚动、切换预览方式 |
 | 宿主半边（HTTP + token + 路径约束） | ✅ 73 条单测 + 真 `dsh web` HTTP 请求（200/403 有记录） |
 | workspace 路径解析（0.1.5 修复） | ✅ 已实测：session 地址（中文/空格）200、absolute 地址 200、workspace 外 403 |
 | 滚动（0.1.6 修复） | ✅ dev harness 600px 容器实测可滚到底、滚动行回传；GUI 手点确认长文档可滚 |
@@ -93,13 +94,17 @@ own host half. GPL-3.0-only, because the engine is GPL-3.0-only.
 
 ```sh
 # desktop profile（报错里出现的 profile 就走这个）
-dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v1.0.0
+dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v1.0.1
 
 # web profile 同理
-dsh plugin --profile web add github:bluesky8318/dsh-plugin-documd#v1.0.0
+dsh plugin --profile web add github:bluesky8318/dsh-plugin-documd#v1.0.1
 
 dsh                    # 起 GUI；默认 manual：在预览的“打开方式”里选 docu.md 才会用本插件
 ```
+
+> 想让「点文件直接出 docu.md」：在 profile 的 `cordis.patch.yml` 加
+> `- id: dsh-plugin-documd / config: { mode: auto, priority: extension }`；
+> 装了 `dsh-better-sidebar` 时 `priority: extension` 是必须的（见 1.0.1 CHANGELOG）。
 
 `#v1.0.0` 是 tag，也可以钉提交：`github:bluesky8318/dsh-plugin-documd#<sha>`（
 v1.0.0 对应提交见 [Releases](https://github.com/bluesky8318/dsh-plugin-documd/releases/tag/v1.0.0) 或
@@ -432,6 +437,10 @@ dsh 安装插件时会读插件 `package.json` 的 **`peerDependencies`** 作为
   解析；本地 clone / overlay（`--patch` 指 `file://`）下缺这两个包会 import 失败。
 - **滚动位置记忆只在同一次客户端会话内有效**：行号按地址记在内存，插件重载或 dsh 重启后不保留。
 - 默认 `mode: manual` 不抢 tab；如果期望「点文件就出 docu.md」，需要显式配置 `mode: auto`。
+  1.0.1 起若装了 `dsh-better-sidebar`（其 editor tab 以 `extension` 档认领一切文件），还需在
+  patch 配置里加 `priority: extension`：本插件同档下用更长的全地址 pattern 赢得平局裁决
+  （1.0.0 的短 `*.md` 模式在 `builtin` 档永远排不赢）。`unsupported` 提示卡在 `extension`
+  档会自动降到 `builtin`，不会抢走本插件不渲染的格式。
 - 官方 `documentPreviews` 入口只覆盖文本类（`loading: 'text-pages'`）；PDF/图片的内嵌仍由本插件
   native tab 提供，系统程序打开仍走 dsh 工具栏。
 - viewer 只读文本：`maxPreviewBytes`（默认 8 MiB）以上的文件直接拒绝（413），超长文件不做分页。

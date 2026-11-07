@@ -108,11 +108,40 @@ describe('classifyPath', () => {
 })
 
 describe('patterns and addresses', () => {
-  it('claims every extension of a category as a glob', () => {
-    expect(patternsForCategory('viewer')).toContain('*.md')
-    expect(patternsForCategory('viewer')).toContain('*.ts')
-    expect(patternsForCategory('native')).toContain('*.pdf')
-    expect(patternsForCategory('unsupported')).toContain('*.docx')
+  it('claims every extension of a category as a full-address glob', () => {
+    expect(patternsForCategory('viewer')).toContain('dsh-resource://file/**/*.md')
+    expect(patternsForCategory('viewer')).toContain('dsh-resource://file/**/*.ts')
+    expect(patternsForCategory('viewer')).toContain('dsh-resource://file/**/*.d.ts')
+    expect(patternsForCategory('native')).toContain('dsh-resource://file/**/*.pdf')
+    expect(patternsForCategory('unsupported')).toContain('dsh-resource://file/**/*.docx')
+  })
+
+  it('keeps every pattern longer than a plain dsh-resource://file/** claim', () => {
+    // Same-band ties in dsh's tab registry break by matched-pattern length;
+    // being strictly longer is what makes the plugin win its own extensions
+    // against e.g. dsh-better-sidebar's editor without touching anything else.
+    const shortest = Math.min(
+      ...['viewer', 'native', 'unsupported'].flatMap((category) =>
+        (patternsForCategory(category as 'viewer')).map((pattern) => pattern.length),
+      ),
+    )
+    expect(shortest).toBeGreaterThan('dsh-resource://file/**'.length)
+  })
+
+  it('matches session- and absolute-scope addresses like the registry would', async () => {
+    const { default: picomatch } = await import('picomatch')
+    // Mirror dsh's matcherFor for a whole-address (colon) pattern.
+    const matcherFor = (pattern: string): ((address: string) => boolean) => {
+      const match = picomatch(pattern, { nocase: true, dot: true })
+      return (address: string) => match(address)
+    }
+    const md = matcherFor('dsh-resource://file/**/*.md')
+    expect(md('dsh-resource://file/session/s1/docs/a.md')).toBe(true)
+    expect(md('dsh-resource://file/absolute/Users/me/a.md')).toBe(true)
+    expect(md('dsh-resource://file/session/s1/docs/a.docx')).toBe(false)
+    // Compound extensions keep their own longer glob.
+    expect(matcherFor('dsh-resource://file/**/*.d.ts')('dsh-resource://file/session/s1/src/x.d.ts')).toBe(true)
+    expect(matcherFor('dsh-resource://file/**/*.ts')('dsh-resource://file/session/s1/src/x.d.ts')).toBe(true)
   })
 
   it('rebuilds an address in the scope it came from', () => {

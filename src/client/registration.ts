@@ -90,6 +90,25 @@ export function planRegistrations(options: PreviewOptions): RegistrationPlan {
   return { viewer: false, native: false, unsupported: true, documentPreviews: true, priority: 'builtin' }
 }
 
+/**
+ * Band for one category's claim, given the plan's band.
+ *
+ * The "install a viewer" card must never outrank another extension's real
+ * viewer: dsh ranks `extension` above `builtin`, so at `extension` the card
+ * would steal formats it cannot render (`.zip`, `.mp3`, …) from editors like
+ * dsh-better-sidebar's. Demoting it to `builtin` keeps exactly its original
+ * behavior — beat the official text fallback, yield to every extension-band
+ * claim — regardless of the configured `priority`.
+ *
+ * @param plan - the registration plan.
+ * @param category - the category whose band is needed.
+ * @returns the band the definition should register at.
+ */
+export function bandForCategory(plan: RegistrationPlan, category: PreviewCategory): PriorityBand {
+  if (category !== 'unsupported') return plan.priority
+  return plan.priority === 'extension' ? 'builtin' : plan.priority
+}
+
 function definitionFor(
   category: PreviewCategory,
   id: string,
@@ -150,7 +169,7 @@ export function registerTabs(ctx: Context, options: PreviewOptions): void {
     if (plan.viewer) definitions.push(definitionFor('viewer', VIEWER_TAB_ID, VIEWER_KIND, plan.priority))
     if (plan.native) definitions.push(definitionFor('native', NATIVE_TAB_ID, NATIVE_KIND, plan.priority))
     if (plan.unsupported) {
-      definitions.push(definitionFor('unsupported', UNSUPPORTED_TAB_ID, UNSUPPORTED_KIND, plan.priority))
+      definitions.push(definitionFor('unsupported', UNSUPPORTED_TAB_ID, UNSUPPORTED_KIND, bandForCategory(plan, 'unsupported')))
     }
 
     for (const definition of definitions) {

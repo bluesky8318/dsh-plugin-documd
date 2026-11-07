@@ -3,6 +3,46 @@
 版本按时间倒序。安装时始终**零构建**（`lib/` 与 `assets/viewer/` 随包提交），
 因此每个 tag 对应的源码树都是可安装的完整树。
 
+## 1.0.1（2026-11-07）— 修「装了 better-sidebar 后永远抢不到文件」
+
+GUI 排查发现：装了 `dsh-better-sidebar` 后，点文件树里的任何文件永远打开它的 editor tab，
+documd 的 viewer 排不上。根因是 tab 竞争排序（`sidebar-right` 的 `candidates()`：
+band 降序 → 命中 pattern 长度降序 → 注册顺序）叠加了两个劣势：
+
+- documd 按 `priority: builtin`（档位 2）注册，而 better-sidebar 的 editor tab 是
+  `extension`（档位 3）—— **跨档比较先于 pattern 长度**，短模式再长也没用；
+- 即使同档，documd 的 `*.md` 式短 glob（4–6 字符）也短于 editor 的
+  `dsh-resource://file/**`（22 字符）。
+
+修法（两处配合，缺一不可）：
+
+- `patternsForCategory` 改发**全地址冒号 glob**：`dsh-resource://file/**/*.md`（27 字符），
+  在 `extension` 档内以 pattern 长度平局裁决压过 editor 的 22 字符模式；
+- patch 配置需同步加 `priority: extension`（host 热加载，无需重启）：
+  `- id: dsh-plugin-documd / config: { mode: auto, priority: extension }`。
+
+新增 `bandForCategory(plan, category)` 纯函数：`extension` 档下 **unsupported 提示卡自动
+降级到 `builtin`** —— 本插件不渲染的格式（zip/mp3/无扩展名文件）绝不抢 extension 档
+editor 的活，只压官方 text 兜底。GUI 已双向验证：`README.md` → documd viewer（editor
+开启状态下）；`LICENSE` → 仍归 better-sidebar editor。75/75 单测通过（新增 pattern
+长度下限与 picomatch 作用域匹配测试）。
+
+其它：
+
+- `package-lock.json` 重建：192 条 `resolved` 全部指向不可达的公司镜像
+  `npmrepo.corp.qunar.com`（历史环境遗留），现改为官方 npm registry（npm 11+ 形态，
+  默认源的包省略 `resolved`，跟随安装方配置）；devDependencies 补 `picomatch` /
+  `@types/picomatch`。
+- `ASSET_VERSION` 随版本升至 `1.0.1`（发行约定：版本号与 package.json 一致，使不可变的
+  `/viewer/1.0.1/` 子树失效缓存；重启 dsh 后生效，期间旧 1.0.0 地址仍由内存中的旧 host
+  半边正常服务）。
+
+安装：
+
+```sh
+dsh plugin --profile desktop add github:bluesky8318/dsh-plugin-documd#v1.0.1
+```
+
 ## 1.0.0（2026-11-03）— 首个正式版
 
 首个经过完整 GUI 验收的正式版本：安装、启动、打开预览、长文滚动、切换预览方式全部手点通过。

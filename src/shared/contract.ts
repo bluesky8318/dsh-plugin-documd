@@ -26,7 +26,7 @@ export const VIEWER_PREFIX = `${ROUTE_PREFIX}/viewer`
  * with `immutable` cache headers, so a version bump is what invalidates the
  * 3.7 MB `viewer.js` instead of a revalidation on every tab open.
  */
-export const ASSET_VERSION = '1.0.0'
+export const ASSET_VERSION = '1.0.1'
 
 /** Absolute path of a versioned viewer asset, e.g. `index.html`. */
 export function viewerAssetPath(relative = 'index.html', version: string = ASSET_VERSION): string {
@@ -242,16 +242,26 @@ export function classifyPath(path: string): PreviewCategory {
   return 'unsupported'
 }
 
-/** Glob patterns (path form) a given kind claims in the tab registry. */
+/**
+ * Glob patterns (full-address form) a given kind claims in the tab registry.
+ *
+ * Every pattern contains a colon, so dsh matches it against the WHOLE address
+ * instead of its basename. Both scopes share the "dsh-resource://file/" prefix —
+ * session-scope (".../session/<id>/a.md") and absolute-scope
+ * (".../absolute/Users/me/a.md") alike — so one glob covers both. The extra
+ * globstar segment also makes each pattern strictly LONGER than the 22-char
+ * "dsh-resource://file/star-star" pattern that other extension-band claimants
+ * (notably dsh-better-sidebar's editor) register: dsh breaks same-band ties by
+ * the matched pattern's length, so this plugin wins its own extensions against
+ * them while never claiming anything outside the lists above.
+ */
 export function patternsForCategory(category: PreviewCategory): readonly string[] {
   const source = category === 'viewer'
     ? [...MARKDOWN_EXTENSIONS, ...CODE_EXTENSIONS, ...DIAGRAM_EXTENSIONS]
     : category === 'native'
       ? [...NATIVE_EXTENSIONS]
       : [...UNSUPPORTED_EXTENSIONS]
-  // A pattern without `:` is matched against the address's path at any depth,
-  // so `*.md` covers `…/docs/notes.md` as well.
-  return source.map((extension) => `*${extension}`)
+  return source.map((extension) => `${FILE_ADDRESS_PREFIX}**/*${extension}`)
 }
 
 /**
